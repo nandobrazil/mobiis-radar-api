@@ -8,14 +8,14 @@ import { ClienteComAnalise, DetalheCliente } from './relatorio.types';
 export class RelatorioController {
   constructor(private relatorioService: RelatorioService) {}
 
-  @Get('top20')
+  @Get('clientes')
   @ApiOperation({
-    summary: 'Top 20 clientes em risco de churn',
-    description: 'Busca os 50 candidatos com maior risco via heurística SQL, analisa com Claude AI e retorna os 20 com maior score_ia.',
+    summary: 'Todos os clientes com análise de churn',
+    description: 'Retorna todos os clientes com análise de risco gerada pelo Claude Haiku em lote. Clientes com dados inalterados usam cache — Claude só é chamado para quem tem mudança nas métricas.',
   })
-  @ApiResponse({ status: 200, description: 'Lista de até 20 clientes ordenada por score_ia decrescente.' })
-  getTop20(): Promise<ClienteComAnalise[]> {
-    return this.relatorioService.getTop20();
+  @ApiResponse({ status: 200, description: 'Lista completa de clientes ordenada por score_ia decrescente.' })
+  getTodos(): Promise<ClienteComAnalise[]> {
+    return this.relatorioService.getTodos();
   }
 
   @Get('cliente/:ownerId')

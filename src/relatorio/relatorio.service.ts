@@ -18,18 +18,52 @@ export class RelatorioService {
     private db: DatabaseService,
   ) {}
 
-  async getTop20(): Promise<ClienteComAnalise[]> {
-    const candidatos = await this.clientesService.getCandidatos(50);
-    const analisados = await Promise.all(candidatos.map((c) => this.enriquecer(c)));
+  async getTodos(): Promise<ClienteComAnalise[]> {
+    const clientes = await this.clientesService.getTodos();
+    this.logger.log(`Total de clientes carregados: ${clientes.length}`);
 
-    return analisados
-      .sort((a, b) => (b.analise?.score_ia ?? -1) - (a.analise?.score_ia ?? -1))
-      .slice(0, 20);
+    const comCache: ClienteComAnalise[] = [];
+    const semCache: ClienteRisco[] = [];
+
+    for (const c of clientes) {
+      const hash = this.cache.hashCliente(c);
+      const cached = this.cache.getAnalise(c.owner_id, hash);
+      if (cached) {
+        comCache.push({ cliente: c, analise: cached });
+      } else {
+        semCache.push(c);
+      }
+    }
+
+    this.logger.log(`Cache: ${comCache.length} hit(s), ${semCache.length} a analisar`);
+
+    const novos: ClienteComAnalise[] = [];
+    const CHUNK = 50;
+    for (let i = 0; i < semCache.length; i += CHUNK) {
+      const chunk = semCache.slice(i, i + CHUNK);
+      const analises = await this.aiService.analisarLote(chunk);
+      for (const c of chunk) {
+        const hash = this.cache.hashCliente(c);
+        const analise = analises.get(c.owner_id) ?? null;
+        if (analise) this.cache.saveAnalise(c.owner_id, hash, analise);
+        novos.push({ cliente: c, analise, erro: analise ? undefined : true });
+      }
+    }
+
+    return [...comCache, ...novos]
+      .sort((a, b) => (b.analise?.score_ia ?? -1) - (a.analise?.score_ia ?? -1));
   }
 
   async getCliente(ownerId: string): Promise<ClienteComAnalise> {
     const cliente = await this.clientesService.getByOwnerId(ownerId);
-    return this.enriquecer(cliente);
+    const hash = this.cache.hashCliente(cliente);
+    const cached = this.cache.getAnalise(cliente.owner_id, hash);
+    if (cached) return { cliente, analise: cached };
+
+    const analises = await this.aiService.analisarLote([cliente]);
+    const analise = analises.get(cliente.owner_id) ?? null;
+    if (analise) this.cache.saveAnalise(cliente.owner_id, hash, analise);
+    return { cliente, analise, erro: analise ? undefined : true };
   }
 
   async getDetalhe(ownerId: string): Promise<DetalheCliente> {
@@ -157,23 +191,4 @@ export class RelatorioService {
     }));
   }
 
-  private async enriquecer(cliente: ClienteRisco): Promise<ClienteComAnalise> {
-    const hash = this.cache.hashCliente(cliente);
-
-    // Dados idênticos ao da última análise → reutiliza sem chamar a Claude
-    const cached = this.cache.getAnalise(cliente.owner_id, hash);
-    if (cached) {
-      this.logger.debug(`Cache hit: ${cliente.nome_cliente} (hash=${hash})`);
-      return { cliente, analise: cached };
-    }
-
-    try {
-      const raw = await this.aiService.analisarRiscoCliente(cliente);
-      const analise: AnaliseCliente = JSON.parse(raw);
-      this.cache.saveAnalise(cliente.owner_id, hash, analise);
-      return { cliente, analise };
-    } catch {
-      return { cliente, analise: null, erro: true };
-    }
-  }
 }

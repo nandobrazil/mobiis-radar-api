@@ -31,18 +31,14 @@ export class ClientesService {
     private cache: CacheService,
   ) {}
 
-  async getCandidatos(limite = 50): Promise<ClienteRisco[]> {
+  async getTodos(): Promise<ClienteRisco[]> {
     const [historico, hoje] = await Promise.all([
       Promise.resolve(this.cache.getHistoricoTodos()),
       this.queryHoje(),
     ]);
 
     const merged = this.merge(historico, hoje);
-
-    // Heurística de seleção: dias inativo (peso 2) menos atividade recente
-    return [...merged.values()]
-      .sort((a, b) => (b.dias_sem_atividade * 2 - b.acoes_30d) - (a.dias_sem_atividade * 2 - a.acoes_30d))
-      .slice(0, limite);
+    return [...merged.values()];
   }
 
   async getByOwnerId(ownerId: string): Promise<ClienteRisco> {
