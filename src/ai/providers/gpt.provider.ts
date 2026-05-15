@@ -35,7 +35,12 @@ export class GptProvider implements IAiProvider {
     if (!res.ok) throw new Error(`GPT ${res.status}: ${await res.text()}`);
 
     const data: any = await res.json();
-    const raw: string = data.choices?.[0]?.message?.content ?? '[]';
-    return parseRespostaLote(raw);
+    const raw: string = data.choices?.[0]?.message?.content ?? '';
+    this.logger.debug(`Raw GPT response:\n${raw}`);
+    if (!raw) {
+      this.logger.error(`GPT retornou content vazio. Full response: ${JSON.stringify(data)}`);
+      return new Map();
+    }
+    return parseRespostaLote(raw, this.nome);
   }
 }

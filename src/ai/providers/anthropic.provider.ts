@@ -26,6 +26,7 @@ export class AnthropicProvider implements IAiProvider {
     });
 
     const raw = (response.content[0] as any).text as string;
-    return parseRespostaLote(raw);
+    this.logger.debug(`Raw Anthropic response:\n${raw}`);
+    return parseRespostaLote(raw, this.nome);
   }
 }

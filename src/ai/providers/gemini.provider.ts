@@ -32,7 +32,12 @@ export class GeminiProvider implements IAiProvider {
     if (!res.ok) throw new Error(`Gemini ${res.status}: ${await res.text()}`);
 
     const data: any = await res.json();
-    const raw: string = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '[]';
-    return parseRespostaLote(raw);
+    const raw: string = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+    this.logger.debug(`Raw Gemini response:\n${raw}`);
+    if (!raw) {
+      this.logger.error(`Gemini retornou content vazio. Full response: ${JSON.stringify(data)}`);
+      return new Map();
+    }
+    return parseRespostaLote(raw, this.nome);
   }
 }
