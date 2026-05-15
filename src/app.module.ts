@@ -7,6 +7,7 @@ import { RelatorioModule } from './relatorio/relatorio.module';
 import { MapaModule } from './mapa/mapa.module';
 import { CacheModule } from './cache/cache.module';
 import { HealthModule } from './health/health.module';
+import { MovideskModule } from './movidesk/movidesk.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { HealthModule } from './health/health.module';
     RelatorioModule,
     MapaModule,
     HealthModule,
+    MovideskModule,
   ],
 })
 export class AppModule {}

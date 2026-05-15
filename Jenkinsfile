@@ -49,6 +49,7 @@ pipeline {
           string(credentialsId: 'DB_USER',         variable: 'DB_USER'),
           string(credentialsId: 'DB_PASS',         variable: 'DB_PASS'),
           string(credentialsId: 'ANTHROPIC_KEY',   variable: 'ANTHROPIC_API_KEY'),
+          string(credentialsId: 'MOVIDESK_TOKEN',  variable: 'MOVIDESK_TOKEN'),
         ]) {
           sh """
             docker run -d \
@@ -62,6 +63,7 @@ pipeline {
               -e DB_USER=\${DB_USER} \
               -e DB_PASS=\${DB_PASS} \
               -e ANTHROPIC_API_KEY=\${ANTHROPIC_API_KEY} \
+              -e MOVIDESK_TOKEN=\${MOVIDESK_TOKEN} \
               ${TAGGED_IMAGE}
           """
         }
