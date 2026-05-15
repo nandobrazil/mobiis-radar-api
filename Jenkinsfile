@@ -7,7 +7,7 @@ pipeline {
     IMAGE_LATEST  = "${env.IMAGE}:latest"
     HOST_PORT     = '8999'
     CONTAINER_PORT = '3000'
-    DATA_VOLUME   = '/srv/mobiis-radar/data'
+    DATA_VOLUME   = '/var/lib/jenkins/volumes/mobiis-radar/data'
   }
 
   stages {
