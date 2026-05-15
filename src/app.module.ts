@@ -6,6 +6,7 @@ import { AiModule } from './ai/ai.module';
 import { RelatorioModule } from './relatorio/relatorio.module';
 import { MapaModule } from './mapa/mapa.module';
 import { CacheModule } from './cache/cache.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { CacheModule } from './cache/cache.module';
     AiModule,
     RelatorioModule,
     MapaModule,
+    HealthModule,
   ],
 })
 export class AppModule {}
