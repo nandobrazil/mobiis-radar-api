@@ -27,7 +27,6 @@ export class GptProvider implements IAiProvider {
       body: JSON.stringify({
         model: this.modelo,
         max_tokens: 8000,
-        response_format: { type: 'json_object' },
         messages: [{ role: 'user', content: buildChurnPromptLote(clientes) }],
       }),
     });
