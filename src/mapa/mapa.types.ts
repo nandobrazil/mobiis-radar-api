@@ -6,4 +6,5 @@ export interface OwnerLocalizacao {
   uf: string | null;
   pais: number | null;
   status: number;
+  documento: string | null;
 }

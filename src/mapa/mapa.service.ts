@@ -23,7 +23,8 @@ export class MapaService {
         OwnerCidade AS cidade,
         OwnerUF     AS uf,
         OwnerPais   AS pais,
-        Status      AS status
+        Status      AS status,
+        OwnerDocumentoNumero AS documento
       FROM Owners WITH (NOLOCK)
       WHERE Status != 3
         AND Type = 3
