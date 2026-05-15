@@ -38,9 +38,9 @@ pipeline {
         // Garante que o diretório do volume SQLite existe no host
         sh "mkdir -p ${env.DATA_VOLUME}"
 
-        // Para e remove só o container desta app
-        sh "docker stop ${APP_NAME} || true"
-        sh "docker rm   ${APP_NAME} || true"
+        // Para e remove só o container desta app (ignora erro se não existir)
+        sh "docker stop ${APP_NAME} 2>/dev/null || true"
+        sh "docker rm   ${APP_NAME} 2>/dev/null || true"
 
         withCredentials([
           string(credentialsId: 'DB_HOST',         variable: 'DB_HOST'),

@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import Database from 'better-sqlite3';
 import { DatabaseService } from '../database/database.service';
+import { AnaliseCliente } from '../ai/ai.service';
 
 export interface HistoricoOwner {
   owner_id: string;
@@ -58,6 +59,18 @@ export class CacheService implements OnModuleInit {
       );
 
       CREATE INDEX IF NOT EXISTS idx_ativ_data ON atividades_diarias (data);
+
+      -- Análises cacheadas por hash dos dados — válidas enquanto os dados não mudarem
+      CREATE TABLE IF NOT EXISTS analises_cache (
+        owner_id         TEXT NOT NULL PRIMARY KEY,
+        data_hash        TEXT NOT NULL,
+        nivel_risco      TEXT NOT NULL,
+        score_ia         INTEGER NOT NULL,
+        resumo           TEXT NOT NULL,
+        motivos          TEXT NOT NULL,
+        acao_recomendada TEXT NOT NULL,
+        cached_at        TEXT NOT NULL
+      );
     `);
     this.logger.log('SQLite inicializado em ./data/radar-cache.db');
   }
@@ -178,6 +191,56 @@ export class CacheService implements OnModuleInit {
         AND a.data < date('now')
       GROUP BY a.owner_id, o.nome
     `).get(ownerId) as HistoricoOwner | null;
+  }
+
+  // ─── Cache de análises Claude (invalidado por hash dos dados) ────────────
+
+  // Fingerprint determinístico das métricas — se mudar algum número, o hash muda
+  hashCliente(c: { dias_sem_atividade: number; acoes_90d: number; acoes_30d: number; acoes_core_30d: number; acoes_core_90d: number; acoes_negativas_30d: number; entidades_utilizadas: number; usuarios_ativos: number; acoes_automatizadas_30d: number }): string {
+    return [
+      c.dias_sem_atividade,
+      c.acoes_90d,
+      c.acoes_30d,
+      c.acoes_core_30d,
+      c.acoes_core_90d,
+      c.acoes_negativas_30d,
+      c.entidades_utilizadas,
+      c.usuarios_ativos,
+      c.acoes_automatizadas_30d,
+    ].join('|');
+  }
+
+  // Retorna análise cacheada só se o hash bater — dados iguais = análise válida
+  getAnalise(ownerId: string, hash: string): AnaliseCliente | null {
+    const row = this.db.prepare(
+      'SELECT * FROM analises_cache WHERE owner_id = ? AND data_hash = ?'
+    ).get(ownerId, hash) as any;
+
+    if (!row) return null;
+    return {
+      nivel_risco: row.nivel_risco,
+      score_ia: row.score_ia,
+      resumo: row.resumo,
+      motivos: JSON.parse(row.motivos),
+      acao_recomendada: row.acao_recomendada,
+    };
+  }
+
+  saveAnalise(ownerId: string, hash: string, analise: AnaliseCliente): void {
+    this.db.prepare(`
+      INSERT OR REPLACE INTO analises_cache
+        (owner_id, data_hash, nivel_risco, score_ia, resumo, motivos, acao_recomendada, cached_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      ownerId,
+      hash,
+      analise.nivel_risco,
+      analise.score_ia,
+      analise.resumo,
+      JSON.stringify(analise.motivos),
+      analise.acao_recomendada,
+      new Date().toISOString(),
+    );
   }
 
   // ─── Utilitários ──────────────────────────────────────────────────────────
