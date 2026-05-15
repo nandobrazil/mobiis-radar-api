@@ -1,8 +1,10 @@
-import Anthropic from '@anthropic-ai/sdk';
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { buildChurnPromptLote } from './prompts';
 import { ClienteRisco } from '../clientes/clientes.types';
+import { IAiProvider } from './providers/ai-provider.interface';
+import { AnthropicProvider } from './providers/anthropic.provider';
+import { GeminiProvider } from './providers/gemini.provider';
+import { GptProvider } from './providers/gpt.provider';
 
 export interface AnaliseCliente {
   nivel_risco: 'ALTO' | 'MEDIO' | 'BAIXO';
@@ -13,39 +15,42 @@ export interface AnaliseCliente {
 }
 
 @Injectable()
-export class AiService {
+export class AiService implements OnModuleInit {
   private readonly logger = new Logger(AiService.name);
-  private client: Anthropic;
+  private provider: IAiProvider;
 
-  constructor(private config: ConfigService) {
-    this.client = new Anthropic({
-      apiKey: this.config.get<string>('ANTHROPIC_API_KEY'),
-    });
+  constructor(private config: ConfigService) {}
+
+  onModuleInit() {
+    this.provider = this.createProvider();
+    this.logger.log(`Provider ativo: ${this.provider.nome} / modelo: ${this.provider.modelo}`);
   }
 
   async analisarLote(clientes: ClienteRisco[]): Promise<Map<string, AnaliseCliente>> {
-    this.logger.log(`Analisando lote de ${clientes.length} clientes via Claude Haiku`);
+    return this.provider.analisarLote(clientes);
+  }
 
-    const response = await this.client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 8000,
-      messages: [{ role: 'user', content: buildChurnPromptLote(clientes) }],
-    });
+  private createProvider(): IAiProvider {
+    const nome = (this.config.getOrThrow<string>('AI_PROVIDER')).toUpperCase();
 
-    const raw = (response.content[0] as any).text as string;
-    const json = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
-
-    const result = new Map<string, AnaliseCliente>();
-    try {
-      const lista: (AnaliseCliente & { owner_id: string })[] = JSON.parse(json);
-      for (const item of lista) {
-        const { owner_id, ...analise } = item;
-        result.set(owner_id, analise);
-      }
-    } catch (e) {
-      this.logger.error(`Falha ao parsear resposta do lote: ${(e as Error).message}`);
+    switch (nome) {
+      case 'ANTHROPIC':
+        return new AnthropicProvider(
+          this.config.getOrThrow('ANTHROPIC_TOKEN'),
+          this.config.getOrThrow('ANTHROPIC_MODELO'),
+        );
+      case 'GEMINI':
+        return new GeminiProvider(
+          this.config.getOrThrow('GEMINI_TOKEN'),
+          this.config.getOrThrow('GEMINI_MODELO'),
+        );
+      case 'GPT':
+        return new GptProvider(
+          this.config.getOrThrow('GPT_TOKEN'),
+          this.config.getOrThrow('GPT_MODELO'),
+        );
+      default:
+        throw new Error(`AI_PROVIDER "${nome}" inválido. Valores aceitos: ANTHROPIC, GEMINI, GPT`);
     }
-
-    return result;
   }
 }

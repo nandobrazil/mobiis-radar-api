@@ -48,8 +48,15 @@ pipeline {
           string(credentialsId: 'DB_NAME',         variable: 'DB_NAME'),
           string(credentialsId: 'DB_USER',         variable: 'DB_USER'),
           string(credentialsId: 'DB_PASS',         variable: 'DB_PASS'),
-          string(credentialsId: 'ANTHROPIC_KEY',   variable: 'ANTHROPIC_API_KEY'),
-          string(credentialsId: 'MOVIDESK_TOKEN',  variable: 'MOVIDESK_TOKEN'),
+          string(credentialsId: 'AI_PROVIDER',      variable: 'AI_PROVIDER'),
+          string(credentialsId: 'ANTHROPIC_TOKEN',  variable: 'ANTHROPIC_TOKEN'),
+          string(credentialsId: 'ANTHROPIC_MODELO', variable: 'ANTHROPIC_MODELO'),
+          string(credentialsId: 'GEMINI_TOKEN',     variable: 'GEMINI_TOKEN'),
+          string(credentialsId: 'GEMINI_MODELO',    variable: 'GEMINI_MODELO'),
+          string(credentialsId: 'GPT_TOKEN',        variable: 'GPT_TOKEN'),
+          string(credentialsId: 'GPT_MODELO',       variable: 'GPT_MODELO'),
+          string(credentialsId: 'ALLOW_NO_CACHE',   variable: 'ALLOW_NO_CACHE'),
+          string(credentialsId: 'MOVIDESK_TOKEN',   variable: 'MOVIDESK_TOKEN'),
         ]) {
           sh """
             docker run -d \
@@ -62,7 +69,14 @@ pipeline {
               -e DB_NAME=\${DB_NAME} \
               -e DB_USER=\${DB_USER} \
               -e DB_PASS=\${DB_PASS} \
-              -e ANTHROPIC_API_KEY=\${ANTHROPIC_API_KEY} \
+              -e AI_PROVIDER=\${AI_PROVIDER} \
+              -e ANTHROPIC_TOKEN=\${ANTHROPIC_TOKEN} \
+              -e ANTHROPIC_MODELO=\${ANTHROPIC_MODELO} \
+              -e GEMINI_TOKEN=\${GEMINI_TOKEN} \
+              -e GEMINI_MODELO=\${GEMINI_MODELO} \
+              -e GPT_TOKEN=\${GPT_TOKEN} \
+              -e GPT_MODELO=\${GPT_MODELO} \
+              -e ALLOW_NO_CACHE=\${ALLOW_NO_CACHE} \
               -e MOVIDESK_TOKEN=\${MOVIDESK_TOKEN} \
               ${TAGGED_IMAGE}
           """

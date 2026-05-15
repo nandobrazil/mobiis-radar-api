@@ -1,5 +1,5 @@
-import { Controller, Get, Param } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Controller, Get, Param, Query } from '@nestjs/common';
+import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { RelatorioService } from './relatorio.service';
 import { ClienteComAnalise, DetalheCliente } from './relatorio.types';
 
@@ -11,23 +11,28 @@ export class RelatorioController {
   @Get('clientes')
   @ApiOperation({
     summary: 'Todos os clientes com análise de churn',
-    description: 'Retorna todos os clientes com análise de risco gerada pelo Claude Haiku em lote. Clientes com dados inalterados usam cache — Claude só é chamado para quem tem mudança nas métricas.',
+    description: 'Retorna todos os clientes com análise de risco em lote. Cache por hash de métricas — IA chamada apenas para quem mudou. Use ?nocache=true para forçar reprocessamento (requer ALLOW_NO_CACHE=true no servidor).',
   })
+  @ApiQuery({ name: 'nocache', required: false, description: 'true = ignora cache e reprocessa via IA (só funciona se ALLOW_NO_CACHE=true no servidor)' })
   @ApiResponse({ status: 200, description: 'Lista completa de clientes ordenada por score_ia decrescente.' })
-  getTodos(): Promise<ClienteComAnalise[]> {
-    return this.relatorioService.getTodos();
+  getTodos(@Query('nocache') nocache?: string): Promise<ClienteComAnalise[]> {
+    return this.relatorioService.getTodos(nocache === 'true');
   }
 
   @Get('cliente/:ownerId')
   @ApiOperation({
     summary: 'Análise individual de um cliente',
-    description: 'Retorna métricas de comportamento e análise de churn gerada pela Claude AI para o owner informado.',
+    description: 'Retorna métricas de comportamento e análise de churn para o owner informado. Use ?nocache=true para forçar reprocessamento via IA.',
   })
   @ApiParam({ name: 'ownerId', description: 'GUID do owner (ex: DB42A861-9DD3-442E-9861-B7F9AB244BF8)' })
+  @ApiQuery({ name: 'nocache', required: false, description: 'true = ignora cache (requer ALLOW_NO_CACHE=true no servidor)' })
   @ApiResponse({ status: 200, description: 'Dados do cliente com análise de risco.' })
   @ApiResponse({ status: 404, description: 'Owner não encontrado.' })
-  getCliente(@Param('ownerId') ownerId: string): Promise<ClienteComAnalise> {
-    return this.relatorioService.getCliente(ownerId);
+  getCliente(
+    @Param('ownerId') ownerId: string,
+    @Query('nocache') nocache?: string,
+  ): Promise<ClienteComAnalise> {
+    return this.relatorioService.getCliente(ownerId, nocache === 'true');
   }
 
   @Get('cliente/:ownerId/detalhe')

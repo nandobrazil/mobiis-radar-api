@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import * as sql from 'mssql';
+import { ConfigService } from '@nestjs/config';
 import { ClientesService } from '../clientes/clientes.service';
 import { AiService, AnaliseCliente } from '../ai/ai.service';
 import { CacheService } from '../cache/cache.service';
@@ -11,23 +12,29 @@ import { ClienteComAnalise, DetalheCliente, EntidadeDetalhe, OrigemDetalhe, Tend
 export class RelatorioService {
   private readonly logger = new Logger(RelatorioService.name);
 
+  private readonly allowNoCache: boolean;
+
   constructor(
     private clientesService: ClientesService,
     private aiService: AiService,
     private cache: CacheService,
     private db: DatabaseService,
-  ) {}
+    private config: ConfigService,
+  ) {
+    this.allowNoCache = this.config.get('ALLOW_NO_CACHE') === 'true';
+  }
 
-  async getTodos(): Promise<ClienteComAnalise[]> {
+  async getTodos(nocache = false): Promise<ClienteComAnalise[]> {
+    const skipCache = nocache && this.allowNoCache;
     const clientes = await this.clientesService.getTodos();
-    this.logger.log(`Total de clientes carregados: ${clientes.length}`);
+    this.logger.log(`Total de clientes: ${clientes.length} | skipCache=${skipCache}`);
 
     const comCache: ClienteComAnalise[] = [];
     const semCache: ClienteRisco[] = [];
 
     for (const c of clientes) {
       const hash = this.cache.hashCliente(c);
-      const cached = this.cache.getAnalise(c.owner_id, hash);
+      const cached = !skipCache && this.cache.getAnalise(c.owner_id, hash);
       if (cached) {
         comCache.push({ cliente: c, analise: cached });
       } else {
@@ -54,10 +61,11 @@ export class RelatorioService {
       .sort((a, b) => (b.analise?.score_ia ?? -1) - (a.analise?.score_ia ?? -1));
   }
 
-  async getCliente(ownerId: string): Promise<ClienteComAnalise> {
+  async getCliente(ownerId: string, nocache = false): Promise<ClienteComAnalise> {
+    const skipCache = nocache && this.allowNoCache;
     const cliente = await this.clientesService.getByOwnerId(ownerId);
     const hash = this.cache.hashCliente(cliente);
-    const cached = this.cache.getAnalise(cliente.owner_id, hash);
+    const cached = !skipCache && this.cache.getAnalise(cliente.owner_id, hash);
     if (cached) return { cliente, analise: cached };
 
     const analises = await this.aiService.analisarLote([cliente]);
