@@ -45,7 +45,7 @@ export class RelatorioService {
     this.logger.log(`Cache: ${comCache.length} hit(s), ${semCache.length} a analisar`);
 
     const novos: ClienteComAnalise[] = [];
-    const CHUNK = 50;
+    const CHUNK = 30;
     for (let i = 0; i < semCache.length; i += CHUNK) {
       const chunk = semCache.slice(i, i + CHUNK);
       const analises = await this.aiService.analisarLote(chunk);

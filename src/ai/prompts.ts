@@ -38,27 +38,15 @@ export function buildChurnPromptLote(clientes: ClienteRisco[]): string {
     ...metricas(c),
   }));
 
-  return `Você é um analista sênior de Customer Success da Fretefy, plataforma de gestão logística TMS/YMS.
-Analise a lista de clientes abaixo e determine o risco de churn de cada um. Você é o motor de decisão — não há score pré-calculado.
+  return `Você é analista sênior de CS da Fretefy (TMS/YMS). Determine o risco de churn de cada cliente abaixo.
 
 ${CONTEXTO}
 
 CLIENTES (${clientes.length}):
-${JSON.stringify(payload, null, 2)}
+${JSON.stringify(payload)}
 
-Retorne APENAS um JSON array válido, sem markdown, sem texto adicional.
-Um objeto por cliente, preservando o owner_id exato do input:
-[
-  {
-    "owner_id": "<mesmo owner_id do input>",
-    "nivel_risco": "ALTO" | "MEDIO" | "BAIXO",
-    "score_ia": <inteiro 0–100, 100 = churn iminente>,
-    "resumo": "<1 frase descrevendo a situação>",
-    "motivos": ["<motivo 1>", "<motivo 2>"],
-    "acao_recomendada": "<1 ação concreta para o CS nas próximas 48h>"
-  }
-]
+Retorne APENAS JSON array válido, sem markdown. Um objeto por cliente:
+[{"owner_id":"<mesmo do input>","nivel_risco":"ALTO"|"MEDIO"|"BAIXO","score_ia":<0-100>,"resumo":"<1 frase curta>","motivos":["<motivo 1>","<motivo 2>"],"acao_recomendada":"<1 ação curta>"}]
 
-Definições: ALTO=intervenção urgente, MEDIO=alerta/acompanhamento, BAIXO=saudável.
-Baseie-se exclusivamente nos dados fornecidos.`;
+ALTO=urgente, MEDIO=alerta, BAIXO=saudável. Baseie-se exclusivamente nos dados. Retorne TODOS os ${clientes.length} clientes.`;
 }

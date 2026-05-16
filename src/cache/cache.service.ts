@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import Database from 'better-sqlite3';
 import { DatabaseService } from '../database/database.service';
 import { AnaliseCliente } from '../ai/ai.service';
@@ -22,7 +23,10 @@ export class CacheService implements OnModuleInit {
   private db: Database.Database;
   private readonly logger = new Logger(CacheService.name);
 
-  constructor(private sqlServer: DatabaseService) {}
+  constructor(
+    private sqlServer: DatabaseService,
+    private config: ConfigService,
+  ) {}
 
   async onModuleInit() {
     this.initSqlite();
@@ -35,7 +39,10 @@ export class CacheService implements OnModuleInit {
     const fs = require('fs');
     if (!fs.existsSync('./data')) fs.mkdirSync('./data');
 
-    this.db = new Database('./data/radar-cache.db');
+    const dbName = (this.config.get<string>('DB_NAME') ?? 'default').replace(/[^a-z0-9_-]/gi, '_');
+    const dbPath = `./data/radar-cache-${dbName}.db`;
+    this.logger.log(`SQLite: ${dbPath}`);
+    this.db = new Database(dbPath);
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS atividades_diarias (
         owner_id   TEXT    NOT NULL,
