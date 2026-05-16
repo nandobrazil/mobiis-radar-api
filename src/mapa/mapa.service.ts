@@ -162,7 +162,10 @@ export class MapaService {
 
     try {
       const res = await fetch(`${BRASILAPI_BASE}/${cnpj}`, {
-        headers: { 'Accept': 'application/json' },
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (compatible; mobiis-radar/1.0)',
+        },
         signal: AbortSignal.timeout(15000),
       });
 
