@@ -20,7 +20,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
         encrypt: this.config.get('DB_ENCRYPT') === 'true',
         trustServerCertificate: this.config.get('DB_TRUST_CERT') !== 'false',
       },
-      connectionTimeout: 30000,
+      connectionTimeout: 300000,
       requestTimeout: 60000,
       pool: { max: 10, min: 0, idleTimeoutMillis: 30000 },
     };
