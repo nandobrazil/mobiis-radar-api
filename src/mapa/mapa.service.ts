@@ -264,7 +264,7 @@ export class MapaService {
         OwnerDocumentoNumero AS documento
       FROM Owners WITH (NOLOCK)
       WHERE Status = 1
-        AND Type = 3
+        AND Type IN (1, 3)
         AND LicenseType = 3
     `);
     return result.recordset;
