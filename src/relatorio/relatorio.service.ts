@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { HttpException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import * as sql from 'mssql';
 import { ConfigService } from '@nestjs/config';
 import { ClientesService } from '../clientes/clientes.service';
@@ -6,9 +6,9 @@ import { AiService, AnaliseCliente } from '../ai/ai.service';
 import { CacheService } from '../cache/cache.service';
 import { DatabaseService } from '../database/database.service';
 import { ClienteRisco } from '../clientes/clientes.types';
-import { calcularParametrosRaw, gerarAlertas, buildMatchCnaePrompt, InsightsCnaeIA } from '../ai/prompts';
+import { calcularParametrosRaw, gerarAlertas, buildMatchCnaePrompt, InsightsCnaeIA, calcularProbabilidadeChurn60d, buildInsightsPrompt, buildPlanoAcaoPrompt, InsightsPayload } from '../ai/prompts';
 import { OwnerLocalizacao } from '../mapa/mapa.types';
-import { ClienteComAnalise, DetalheCliente, EntidadeDetalhe, MatchCnaeInput, MatchCnaeResult, OrigemDetalhe, ParametrosAnalise, TendenciaSemanal } from './relatorio.types';
+import { ClienteComAnalise, DetalheCliente, EntidadeDetalhe, MatchCnaeInput, MatchCnaeResult, OrigemDetalhe, ParametrosAnalise, PlanoAcao, RelatorioInsights, TendenciaSemanal } from './relatorio.types';
 
 export interface StatusAnalise {
   processando: boolean;
@@ -78,7 +78,7 @@ export class RelatorioService {
       const hash = this.cache.hashCliente(c, ctx?.contexto);
       const cached = !skipCache && this.cache.getAnalise(c.owner_id, hash);
       if (cached) {
-        comCache.push({ cliente: c, analise: cached, contexto: ctx ?? null, owner: buildOwnerLocalizacao(ownerMap.get(c.owner_id)) });
+        comCache.push({ cliente: c, analise: cached, contexto: ctx ?? null, owner: buildOwnerLocalizacao(ownerMap.get(c.owner_id)), probabilidade_churn_60d: calcularProbabilidadeChurn60d(cached, c) });
       } else {
         semCache.push(c);
       }
@@ -125,7 +125,7 @@ export class RelatorioService {
           const hash = this.cache.hashCliente(c, ctx?.contexto);
           const analise = analises.get(c.owner_id) ?? null;
           if (analise) this.cache.saveAnalise(c.owner_id, hash, analise);
-          novos.push({ cliente: c, analise, contexto: ctx ?? null, owner: buildOwnerLocalizacao(ownerMap.get(c.owner_id)), erro: analise ? undefined : true });
+          novos.push({ cliente: c, analise, contexto: ctx ?? null, owner: buildOwnerLocalizacao(ownerMap.get(c.owner_id)), probabilidade_churn_60d: calcularProbabilidadeChurn60d(analise, c), erro: analise ? undefined : true });
         }
         this.statusAnalise.chunks_concluidos = ci + 1;
         this.statusAnalise.clientes_analisados = novos.length;
@@ -161,7 +161,7 @@ export class RelatorioService {
     const hash = this.cache.hashCliente(cliente, ctx?.contexto);
     const analise = this.cache.getAnalise(cliente.owner_id, hash) ?? null;
     const owner = buildOwnerLocalizacao(this.cache.getOwnerInfoMap().get(ownerId));
-    return { cliente, analise, contexto: ctx ?? null, owner };
+    return { cliente, analise, contexto: ctx ?? null, owner, probabilidade_churn_60d: calcularProbabilidadeChurn60d(analise, cliente) };
   }
 
   async reprocessarCliente(ownerId: string): Promise<ClienteComAnalise> {
@@ -174,7 +174,7 @@ export class RelatorioService {
     const analises = await this.aiService.analisarLote([cliente], contextos);
     const analise = analises.get(cliente.owner_id) ?? null;
     if (analise) this.cache.saveAnalise(cliente.owner_id, hash, analise);
-    return { cliente, analise, contexto: ctx ?? null, owner, erro: analise ? undefined : true };
+    return { cliente, analise, contexto: ctx ?? null, owner, probabilidade_churn_60d: calcularProbabilidadeChurn60d(analise, cliente), erro: analise ? undefined : true };
   }
 
   getContexto(ownerId: string) {
@@ -347,6 +347,187 @@ export class RelatorioService {
       oportunidades: ia.oportunidades ?? [],
       riscos_conhecidos: ia.riscos_conhecidos ?? [],
     };
+  }
+
+  async getInsights(nocache = false): Promise<RelatorioInsights> {
+    const clientes = await this.clientesService.getTodos();
+    const ownerMap = this.cache.getOwnerInfoMap();
+
+    // Coleta apenas clientes com análise em cache
+    const analisados: { cliente: import('../clientes/clientes.types').ClienteRisco; analise: import('../ai/ai.service').AnaliseCliente; info: ReturnType<typeof ownerMap.get> }[] = [];
+    for (const c of clientes) {
+      const analise = this.cache.getAnaliseByOwner(c.owner_id);
+      if (analise) analisados.push({ cliente: c, analise, info: ownerMap.get(c.owner_id) });
+    }
+
+    if (analisados.length === 0) {
+      throw new HttpException(
+        { message: 'Nenhum cliente analisado ainda. Execute GET /relatorio/clientes primeiro.' }, 202
+      );
+    }
+
+    const resumo = {
+      total_analisados: analisados.length,
+      alto_risco: analisados.filter(a => a.analise.nivel_risco === 'ALTO').length,
+      medio_risco: analisados.filter(a => a.analise.nivel_risco === 'MEDIO').length,
+      baixo_risco: analisados.filter(a => a.analise.nivel_risco === 'BAIXO').length,
+    };
+
+    const cacheKey = `${resumo.total_analisados}|${resumo.alto_risco}|${resumo.medio_risco}`;
+    if (!nocache) {
+      const cached = this.cache.getInsightsCache(cacheKey);
+      if (cached) return { ...cached.result, de_cache: true };
+    }
+
+    // Agregação por setor
+    const setorMap = new Map<string, { total: number; alto: number; scores: number[] }>();
+    for (const { analise, info } of analisados) {
+      const setor = info?.geo?.cnae_fiscal_descricao ?? 'Setor não informado';
+      if (!setorMap.has(setor)) setorMap.set(setor, { total: 0, alto: 0, scores: [] });
+      const s = setorMap.get(setor)!;
+      s.total++;
+      if (analise.nivel_risco === 'ALTO') s.alto++;
+      s.scores.push(analise.score_ia);
+    }
+    const por_setor = [...setorMap.entries()]
+      .map(([setor, s]) => ({ setor, total: s.total, alto: s.alto, score_medio: Math.round(s.scores.reduce((a, b) => a + b, 0) / s.scores.length) }))
+      .sort((a, b) => b.alto - a.alto);
+
+    // Agregação por módulo
+    const moduloMap = new Map<string, { total: number; em_risco: number }>();
+    for (const { analise, info } of analisados) {
+      const mods = (info?.lista.modules ?? '').split(',').filter(Boolean);
+      for (const mod of mods) {
+        if (!moduloMap.has(mod)) moduloMap.set(mod, { total: 0, em_risco: 0 });
+        const m = moduloMap.get(mod)!;
+        m.total++;
+        if (analise.nivel_risco === 'ALTO' || analise.nivel_risco === 'MEDIO') m.em_risco++;
+      }
+    }
+    const por_modulo = [...moduloMap.entries()]
+      .map(([modulo, m]) => ({ modulo, total: m.total, em_risco: m.em_risco }))
+      .sort((a, b) => b.em_risco - a.em_risco);
+
+    // Padrões
+    const mkOwners = (arr: typeof analisados) => arr.slice(0, 20).map(a => ({ id: a.cliente.owner_id, nome: a.cliente.nome_cliente }));
+    const derivadasMap = new Map(analisados.map(a => [a.cliente.owner_id, calcularParametrosRaw(a.cliente).metricas_derivadas]));
+    const padroes: InsightsPayload['padroes'] = {
+      queda_acima_40pct:       { count: 0, owners: [] },
+      inativo_com_historico:   { count: 0, owners: [] },
+      usuario_unico_em_risco:  { count: 0, owners: [] },
+      sem_uso_core:            { count: 0, owners: [] },
+      saudaveis_sem_automacao: { count: 0, owners: [] },
+      saudaveis_multimodulo:   { count: 0, owners: [] },
+    };
+    for (const a of analisados) {
+      const d = derivadasMap.get(a.cliente.owner_id)!;
+      const o = { id: a.cliente.owner_id, nome: a.cliente.nome_cliente };
+      if (d.variacao_uso_pct !== null && d.variacao_uso_pct <= -40) { padroes.queda_acima_40pct.count++; padroes.queda_acima_40pct.owners.push(o); }
+      if (a.cliente.dias_sem_atividade >= 30 && a.cliente.acoes_90d > 10) { padroes.inativo_com_historico.count++; padroes.inativo_com_historico.owners.push(o); }
+      if (a.cliente.usuarios_ativos === 1 && a.analise.nivel_risco !== 'BAIXO') { padroes.usuario_unico_em_risco.count++; padroes.usuario_unico_em_risco.owners.push(o); }
+      if (a.cliente.acoes_30d > 0 && d.pct_core === 0) { padroes.sem_uso_core.count++; padroes.sem_uso_core.owners.push(o); }
+      if (a.analise.nivel_risco === 'BAIXO' && d.pct_automatizado === 0 && a.cliente.acoes_30d > 10) { padroes.saudaveis_sem_automacao.count++; padroes.saudaveis_sem_automacao.owners.push(o); }
+      const nMods = (a.info?.lista.modules ?? '').split(',').filter(Boolean).length;
+      if (a.analise.nivel_risco === 'BAIXO' && nMods >= 3) { padroes.saudaveis_multimodulo.count++; padroes.saudaveis_multimodulo.owners.push(o); }
+    }
+
+    const top_risco = analisados
+      .filter(a => a.analise.nivel_risco === 'ALTO' || a.analise.nivel_risco === 'MEDIO')
+      .sort((a, b) => a.analise.score_ia - b.analise.score_ia)
+      .slice(0, 10)
+      .map(a => ({
+        owner_id: a.cliente.owner_id,
+        nome: a.cliente.nome_cliente,
+        score: a.analise.score_ia,
+        nivel: a.analise.nivel_risco,
+        dias_sem: a.cliente.dias_sem_atividade,
+        variacao: derivadasMap.get(a.cliente.owner_id)?.variacao_uso_pct ?? null,
+        modulos: (a.info?.lista.modules ?? '').split(',').filter(Boolean),
+        prob_60d: calcularProbabilidadeChurn60d(a.analise, a.cliente) ?? 0,
+      }));
+
+    const payload: InsightsPayload = { resumo, por_setor, por_modulo, padroes, top_risco };
+    this.logger.log(`insights: chamando IA (${analisados.length} clientes analisados)`);
+    const raw = await this.aiService.completar(buildInsightsPrompt(payload));
+    this.logger.debug(`insights raw IA:\n${raw}`);
+
+    let insightsIA: any[] = [];
+    try {
+      const json = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+      insightsIA = JSON.parse(json);
+    } catch { this.logger.error(`insights: falha ao parsear IA: ${raw}`); }
+
+    const insights = insightsIA.map(i => ({
+      tipo: i.tipo,
+      titulo: i.titulo,
+      descricao: i.descricao,
+      clientes_afetados: i.owner_ids?.length ?? 0,
+      owner_ids: i.owner_ids ?? [],
+      acao_sugerida: i.acao_sugerida,
+    }));
+
+    const acoes_priorizadas = top_risco.map(c => ({
+      owner_id: c.owner_id,
+      nome: c.nome,
+      probabilidade_churn_60d: c.prob_60d,
+      nivel_risco: c.nivel,
+      score_ia: c.score,
+      acao_recomendada: analisados.find(a => a.cliente.owner_id === c.owner_id)?.analise.acao_recomendada ?? '',
+    }));
+
+    const result: RelatorioInsights = {
+      gerado_em: new Date().toISOString(),
+      de_cache: false,
+      total_clientes_analisados: analisados.length,
+      insights,
+      acoes_priorizadas,
+    };
+    this.cache.saveInsightsCache(cacheKey, result);
+    return result;
+  }
+
+  async getPlano(ownerId: string, nocache = false): Promise<PlanoAcao> {
+    const cliente = await this.clientesService.getByOwnerId(ownerId);
+    const ctx = this.cache.getContexto(ownerId);
+    const hash = this.cache.hashCliente(cliente, ctx?.contexto);
+    const analise = this.cache.getAnalise(cliente.owner_id, hash);
+
+    if (!analise) {
+      throw new NotFoundException(`Nenhuma análise em cache para "${ownerId}". Execute POST /relatorio/cliente/${ownerId}/reprocessar primeiro.`);
+    }
+
+    if (!nocache) {
+      const cached = this.cache.getPlanoCache(ownerId, hash);
+      if (cached) return { ...cached, de_cache: true };
+    }
+
+    const { metricas_derivadas } = calcularParametrosRaw(cliente);
+    const probabilidade = calcularProbabilidadeChurn60d(analise, cliente);
+    const prompt = buildPlanoAcaoPrompt(cliente, analise, metricas_derivadas, ctx?.contexto ?? null, probabilidade);
+
+    this.logger.log(`plano: chamando IA para ${cliente.nome_cliente}`);
+    const raw = await this.aiService.completar(prompt);
+
+    let planoIA: any = { prioridade: 'MEDIA', objetivo: '', passos: [], metricas_a_monitorar: [], sinal_de_sucesso: '' };
+    try {
+      const json = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+      planoIA = JSON.parse(json);
+    } catch { this.logger.error(`plano: falha ao parsear IA: ${raw}`); }
+
+    const result: PlanoAcao = {
+      owner_id: ownerId,
+      nome_cliente: cliente.nome_cliente,
+      probabilidade_churn_60d: probabilidade,
+      prioridade: planoIA.prioridade ?? 'MEDIA',
+      objetivo: planoIA.objetivo ?? '',
+      passos: planoIA.passos ?? [],
+      metricas_a_monitorar: planoIA.metricas_a_monitorar ?? [],
+      sinal_de_sucesso: planoIA.sinal_de_sucesso ?? '',
+      gerado_em: new Date().toISOString(),
+      de_cache: false,
+    };
+    this.cache.savePlanoCache(ownerId, hash, result);
+    return result;
   }
 
   async getDetalhe(ownerId: string): Promise<DetalheCliente> {

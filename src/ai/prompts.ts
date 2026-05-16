@@ -336,6 +336,152 @@ export function gerarAlertas(
   return alertas;
 }
 
+// ─── Probabilidade de churn em 60 dias (determinístico) ──────────────────────
+
+export function calcularProbabilidadeChurn60d(
+  analise: AnaliseCliente | null,
+  c: ClienteRisco,
+): number | null {
+  if (!analise) return null;
+  // Base invertida do score: score 100 → 5%, score 0 → 85%
+  let prob = 5 + (1 - analise.score_ia / 100) * 80;
+  // Boost por nível de risco
+  if (analise.nivel_risco === 'ALTO') prob *= 1.15;
+  else if (analise.nivel_risco === 'MEDIO') prob *= 1.05;
+  // Boost por inatividade prolongada
+  if (c.dias_sem_atividade > 45) prob += 8;
+  else if (c.dias_sem_atividade > 30) prob += 4;
+  return Math.max(5, Math.min(95, Math.round(prob)));
+}
+
+// ─── Prompt insights estratégicos cross-client ────────────────────────────────
+
+export interface InsightsPayload {
+  resumo: { total_analisados: number; alto_risco: number; medio_risco: number; baixo_risco: number };
+  por_setor: { setor: string; total: number; alto: number; score_medio: number }[];
+  por_modulo: { modulo: string; total: number; em_risco: number }[];
+  padroes: {
+    queda_acima_40pct: { count: number; owners: { id: string; nome: string }[] };
+    inativo_com_historico: { count: number; owners: { id: string; nome: string }[] };
+    usuario_unico_em_risco: { count: number; owners: { id: string; nome: string }[] };
+    sem_uso_core: { count: number; owners: { id: string; nome: string }[] };
+    saudaveis_sem_automacao: { count: number; owners: { id: string; nome: string }[] };
+    saudaveis_multimodulo: { count: number; owners: { id: string; nome: string }[] };
+  };
+  top_risco: { owner_id: string; nome: string; score: number; nivel: string; dias_sem: number; variacao: number | null; modulos: string[]; prob_60d: number }[];
+}
+
+export function buildInsightsPrompt(payload: InsightsPayload): string {
+  return `Você é analista estratégico de Customer Success de uma plataforma SaaS B2B de logística (Fretefy — TMS/YMS para transportadoras e embarcadoras).
+
+## Base de clientes analisada
+
+### Distribuição por risco
+- Total analisados: ${payload.resumo.total_analisados}
+- ALTO risco: ${payload.resumo.alto_risco} (${Math.round(payload.resumo.alto_risco / payload.resumo.total_analisados * 100)}%)
+- MÉDIO risco: ${payload.resumo.medio_risco}
+- BAIXO risco: ${payload.resumo.baixo_risco}
+
+### Por setor (CNAE)
+${payload.por_setor.slice(0, 8).map(s => `- ${s.setor}: ${s.total} clientes, ${s.alto} em risco alto, score médio ${s.score_medio}`).join('\n') || '- Dados de setor não disponíveis'}
+
+### Por módulo (adoção vs risco)
+${payload.por_modulo.slice(0, 8).map(m => `- ${m.modulo}: ${m.total} clientes usando, ${m.em_risco} em risco médio/alto`).join('\n') || '- Dados de módulo não disponíveis'}
+
+### Padrões detectados
+- Queda de uso ≥ 40% vs histórico: ${payload.padroes.queda_acima_40pct.count} clientes
+- Inativos há 30d+ com histórico relevante: ${payload.padroes.inativo_com_historico.count} clientes
+- Usuário único em conta de risco (key person risk): ${payload.padroes.usuario_unico_em_risco.count} clientes
+- Ativos mas sem uso do core (Cargas/Reservas): ${payload.padroes.sem_uso_core.count} clientes
+- Saudáveis sem nenhuma automação (oportunidade): ${payload.padroes.saudaveis_sem_automacao.count} clientes
+- Saudáveis com 3+ módulos (candidatos a upgrade): ${payload.padroes.saudaveis_multimodulo.count} clientes
+
+### Top clientes em risco crítico
+${payload.top_risco.slice(0, 10).map(c =>
+  `- ${c.nome} | score: ${c.score}/100 | ${c.nivel} | ${c.dias_sem}d sem uso | variação: ${c.variacao !== null ? c.variacao + '%' : 'n/a'} | módulos: ${c.modulos.join(', ')} | prob churn 60d: ${c.prob_60d}%`
+).join('\n')}
+
+## Tarefa
+Analise os padrões acima e gere de 4 a 6 insights estratégicos que um gerente de CS precisa saber para agir essa semana.
+
+Tipos de insight:
+- **RISCO**: grupo de clientes com risco crescente que exige ação CS imediata
+- **OPORTUNIDADE**: grupo com potencial de upsell, cross-sell ou expansão de conta identificado nos dados
+- **PADRAO**: comportamento sistêmico que explica churn ou baixo engajamento — útil para o produto/CS
+- **EXPANSAO**: clientes saudáveis prontos para crescimento — plano proativo de upgrade
+
+Use os owner_ids dos padrões e top_risco listados acima para preencher o campo owner_ids de cada insight.
+Seja específico: use os números concretos que estão nos dados, não generalize.
+
+Retorne APENAS JSON válido (sem markdown):
+[{
+  "tipo": "RISCO|OPORTUNIDADE|PADRAO|EXPANSAO",
+  "titulo": "título curto e direto (máx 60 chars)",
+  "descricao": "1-2 frases com números concretos dos dados acima",
+  "owner_ids": ["owner_id_1", "owner_id_2"],
+  "acao_sugerida": "ação específica e acionável para o time de CS executar essa semana"
+}]`;
+}
+
+// ─── Prompt plano de ação por cliente ─────────────────────────────────────────
+
+export function buildPlanoAcaoPrompt(
+  cliente: ClienteRisco,
+  analise: AnaliseCliente,
+  derivadas: ReturnType<typeof calcularParametrosRaw>['metricas_derivadas'],
+  contexto: string | null,
+  probabilidade: number | null,
+): string {
+  const modInfo = [
+    `Score saúde: ${analise.score_ia}/100`,
+    `Risco: ${analise.nivel_risco}`,
+    `Perfil: ${analise.perfil_uso}`,
+    probabilidade !== null ? `Probabilidade de churn em 60 dias: ${probabilidade}%` : '',
+    `Dias sem atividade: ${cliente.dias_sem_atividade}`,
+    derivadas.variacao_uso_pct !== null ? `Variação de uso vs baseline: ${derivadas.variacao_uso_pct}%` : '',
+    `Ações negativas: ${derivadas.pct_negativos}%`,
+    `Engajamento no core: ${derivadas.pct_core}%`,
+    `Automação: ${derivadas.pct_automatizado}%`,
+    `Usuários ativos: ${cliente.usuarios_ativos}`,
+  ].filter(Boolean).join(' | ');
+
+  return `Você é especialista em Customer Success B2B com experiência em plataformas de logística e transporte (TMS/YMS).
+
+## Cliente
+Nome: ${cliente.nome_cliente}
+${modInfo}
+
+## Análise de comportamento
+Padrão histórico: ${analise.padrao_historico}
+Resumo atual: ${analise.resumo}
+Motivos identificados:
+${analise.motivos.map(m => `- ${m}`).join('\n')}
+
+Ação recomendada pelo sistema: ${analise.acao_recomendada}
+${contexto ? `\n## Contexto do CS\n${contexto}` : ''}
+
+## Tarefa
+Elabore um plano de ação concreto e executável para o time de CS reter e/ou engajar esse cliente nas próximas semanas.
+O plano deve ser realista, com responsáveis e prazos claros. Considere o perfil do cliente e o que os dados indicam.
+
+Prioridade:
+- URGENTE: churn provável em < 30 dias ou score < 35
+- ALTA: risco alto/médio com sinais claros de deterioração
+- MEDIA: risco médio com oportunidade de melhoria
+- BAIXA: cliente saudável com ação preventiva/expansão
+
+Retorne APENAS JSON válido (sem markdown):
+{
+  "prioridade": "URGENTE|ALTA|MEDIA|BAIXA",
+  "objetivo": "o que queremos alcançar com esse cliente em 60 dias (1 frase)",
+  "passos": [
+    { "ordem": 1, "acao": "ação específica", "responsavel": "CS|COMERCIAL|PRODUTO|DIRECAO", "prazo_dias": 7 }
+  ],
+  "metricas_a_monitorar": ["métrica 1", "métrica 2", "métrica 3"],
+  "sinal_de_sucesso": "como saberemos que o plano funcionou (1 frase mensurável)"
+}`;
+}
+
 // ─── Prompt match-cnae (argumento de venda via IA) ───────────────────────────
 
 export interface InsightsCnaeIA {

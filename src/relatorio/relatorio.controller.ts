@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpException, NotFoundException, Param, Post, Query } from '@nestjs/common';
 import { ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { RelatorioService, StatusAnalise } from './relatorio.service';
-import { ClienteComAnalise, DetalheCliente, MatchCnaeInput, MatchCnaeResult, ParametrosAnalise } from './relatorio.types';
+import { ClienteComAnalise, DetalheCliente, MatchCnaeInput, MatchCnaeResult, ParametrosAnalise, PlanoAcao, RelatorioInsights } from './relatorio.types';
 
 @ApiTags('Relatorio')
 @Controller('relatorio')
@@ -45,6 +45,21 @@ export class RelatorioController {
   @ApiResponse({ status: 203, description: 'Resultado servido do cache. de_cache=true.' })
   async matchCnae(@Body() body: MatchCnaeInput, @Query('nocache') nocache?: string): Promise<MatchCnaeResult> {
     const result = await this.relatorioService.matchCnae(body, nocache === 'true');
+    if (result.de_cache) throw new HttpException(result, 203);
+    return result;
+  }
+
+  @Get('insights')
+  @ApiOperation({
+    summary: 'Insights estratégicos cross-client gerados por IA',
+    description: 'Analisa todos os clientes com análise em cache e retorna 4–6 insights estratégicos (riscos, oportunidades, padrões, expansão) + lista priorizada com probabilidade de churn em 60 dias. Cacheado por distribuição de risco — atualiza automaticamente quando novos clientes são analisados. Use ?nocache=true para forçar reprocessamento.',
+  })
+  @ApiQuery({ name: 'nocache', required: false, description: 'true = reprocessa via IA ignorando cache' })
+  @ApiResponse({ status: 200, description: 'Insights frescos gerados pela IA. de_cache=false.' })
+  @ApiResponse({ status: 203, description: 'Insights servidos do cache. de_cache=true.' })
+  @ApiResponse({ status: 202, description: 'Nenhum cliente analisado ainda.' })
+  async getInsights(@Query('nocache') nocache?: string): Promise<RelatorioInsights> {
+    const result = await this.relatorioService.getInsights(nocache === 'true');
     if (result.de_cache) throw new HttpException(result, 203);
     return result;
   }
@@ -125,6 +140,22 @@ export class RelatorioController {
   @ApiResponse({ status: 404, description: 'Owner não encontrado.' })
   getParametros(@Param('ownerId') ownerId: string): Promise<ParametrosAnalise> {
     return this.relatorioService.getParametros(ownerId);
+  }
+
+  @Get('cliente/:ownerId/plano')
+  @ApiOperation({
+    summary: 'Plano de ação CS gerado por IA para um cliente',
+    description: 'Recebe a análise em cache e gera um plano de ação estruturado com prioridade, objetivo, passos numerados (com responsável e prazo), métricas a monitorar e sinal de sucesso. Cacheado pelo hash dos dados — atualiza quando a análise mudar. Use ?nocache=true para forçar nova geração.',
+  })
+  @ApiParam({ name: 'ownerId', description: 'GUID do owner' })
+  @ApiQuery({ name: 'nocache', required: false, description: 'true = reprocessa via IA ignorando cache' })
+  @ApiResponse({ status: 200, description: 'Plano fresco gerado pela IA. de_cache=false.' })
+  @ApiResponse({ status: 203, description: 'Plano servido do cache. de_cache=true.' })
+  @ApiResponse({ status: 404, description: 'Owner não encontrado ou sem análise em cache.' })
+  async getPlano(@Param('ownerId') ownerId: string, @Query('nocache') nocache?: string): Promise<PlanoAcao> {
+    const result = await this.relatorioService.getPlano(ownerId, nocache === 'true');
+    if (result.de_cache) throw new HttpException(result, 203);
+    return result;
   }
 
   @Get('cliente/:ownerId/detalhe')

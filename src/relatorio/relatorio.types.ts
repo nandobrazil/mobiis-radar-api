@@ -14,6 +14,7 @@ export interface ClienteComAnalise {
   analise: AnaliseCliente | null;
   contexto: ClienteContexto | null;
   owner: OwnerLocalizacao | null;
+  probabilidade_churn_60d: number | null;
   erro?: true;
 }
 
@@ -106,6 +107,52 @@ export interface InsightsCnae {
   abordagem_sugerida: string;
   oportunidades: string[];
   riscos_conhecidos: string[];
+}
+
+export interface InsightEstrategico {
+  tipo: 'RISCO' | 'OPORTUNIDADE' | 'PADRAO' | 'EXPANSAO';
+  titulo: string;
+  descricao: string;
+  clientes_afetados: number;
+  owner_ids: string[];
+  acao_sugerida: string;
+}
+
+export interface AcaoPriorizada {
+  owner_id: string;
+  nome: string;
+  probabilidade_churn_60d: number;
+  nivel_risco: string;
+  score_ia: number;
+  acao_recomendada: string;
+}
+
+export interface RelatorioInsights {
+  gerado_em: string;
+  de_cache: boolean;
+  total_clientes_analisados: number;
+  insights: InsightEstrategico[];
+  acoes_priorizadas: AcaoPriorizada[];
+}
+
+export interface PassoPlano {
+  ordem: number;
+  acao: string;
+  responsavel: 'CS' | 'COMERCIAL' | 'PRODUTO' | 'DIRECAO';
+  prazo_dias: number;
+}
+
+export interface PlanoAcao {
+  owner_id: string;
+  nome_cliente: string;
+  probabilidade_churn_60d: number | null;
+  prioridade: 'URGENTE' | 'ALTA' | 'MEDIA' | 'BAIXA';
+  objetivo: string;
+  passos: PassoPlano[];
+  metricas_a_monitorar: string[];
+  sinal_de_sucesso: string;
+  gerado_em: string;
+  de_cache: boolean;
 }
 
 export interface MatchCnaeResult {

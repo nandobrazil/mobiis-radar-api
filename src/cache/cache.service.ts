@@ -140,6 +140,21 @@ export class CacheService implements OnModuleInit {
         result        TEXT NOT NULL,
         cached_at     TEXT NOT NULL
       );
+
+      -- Cache dos insights estratégicos cross-client (1 linha por distribuição de risco)
+      CREATE TABLE IF NOT EXISTS insights_cache (
+        cache_key  TEXT PRIMARY KEY,
+        result     TEXT NOT NULL,
+        gerado_em  TEXT NOT NULL
+      );
+
+      -- Cache dos planos de ação por cliente (invalidado por hash dos dados)
+      CREATE TABLE IF NOT EXISTS planos_cache (
+        owner_id   TEXT PRIMARY KEY,
+        data_hash  TEXT NOT NULL,
+        result     TEXT NOT NULL,
+        cached_at  TEXT NOT NULL
+      );
     `);
     // Migrações para bancos existentes sem as colunas novas
     for (const migration of [
@@ -563,6 +578,40 @@ export class CacheService implements OnModuleInit {
     })();
 
     return { owners: data.owners_geo.length, cidades: data.cidades_geo.length };
+  }
+
+  // ─── Cache insights estratégicos ─────────────────────────────────────────
+
+  getInsightsCache(cacheKey: string): { result: any } | null {
+    const row = this.db.prepare(
+      'SELECT result FROM insights_cache WHERE cache_key = ?'
+    ).get(cacheKey) as { result: string } | undefined;
+    if (!row) return null;
+    return { result: JSON.parse(row.result) };
+  }
+
+  saveInsightsCache(cacheKey: string, result: any): void {
+    this.db.prepare(`
+      INSERT OR REPLACE INTO insights_cache (cache_key, result, gerado_em)
+      VALUES (?, ?, ?)
+    `).run(cacheKey, JSON.stringify(result), new Date().toISOString());
+  }
+
+  // ─── Cache planos de ação ─────────────────────────────────────────────────
+
+  getPlanoCache(ownerId: string, hash: string): any | null {
+    const row = this.db.prepare(
+      'SELECT result FROM planos_cache WHERE owner_id = ? AND data_hash = ?'
+    ).get(ownerId, hash) as { result: string } | undefined;
+    if (!row) return null;
+    return JSON.parse(row.result);
+  }
+
+  savePlanoCache(ownerId: string, hash: string, result: any): void {
+    this.db.prepare(`
+      INSERT OR REPLACE INTO planos_cache (owner_id, data_hash, result, cached_at)
+      VALUES (?, ?, ?, ?)
+    `).run(ownerId, hash, JSON.stringify(result), new Date().toISOString());
   }
 
   // ─── Cache match-cnae (keyed pelos CNAEs do prospect) ────────────────────
