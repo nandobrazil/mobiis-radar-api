@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { DatabaseService } from '../database/database.service';
 import { CacheService, OwnerGeoRow, OwnerListaRow } from '../cache/cache.service';
+import { DatabaseService } from '../database/database.service';
 import { OwnerLocalizacao } from './mapa.types';
 
 const NOMINATIM_UA = 'mobiis-radar/1.0 (contato interno)';
@@ -24,6 +24,10 @@ export class MapaService {
       this.logger.log(`owners_lista: ${cached.length} do cache SQLite`);
       owners = cached;
     } else {
+      if (nocache) {
+        const removidos = this.cache.clearGeoNaoEncontrado();
+        if (removidos > 0) this.logger.log(`nocache: ${removidos} entradas nao_encontrado removidas para re-fetch`);
+      }
       owners = await this.fetchOwnersFromSql();
       this.cache.saveOwnersList(owners);
       this.logger.log(`owners_lista: ${owners.length} buscados do SQL Server`);
@@ -217,7 +221,7 @@ export class MapaService {
         Status      AS status,
         OwnerDocumentoNumero AS documento
       FROM Owners WITH (NOLOCK)
-      WHERE Status != 3
+      WHERE Status = 1
         AND Type = 3
         AND LicenseType = 3
     `);

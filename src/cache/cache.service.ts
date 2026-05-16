@@ -394,9 +394,21 @@ export class CacheService implements OnModuleInit {
   // ─── Geo por CNPJ (permanente) ────────────────────────────────────────────
 
   getOwnerGeo(documento: string): OwnerGeoRow | null {
-    return this.db.prepare(
+    const row = this.db.prepare(
       'SELECT * FROM owners_geo WHERE documento = ?'
     ).get(documento) as OwnerGeoRow | null;
+    if (!row) return null;
+    // nao_encontrado tem TTL de 7 dias — permite retentativa após falha transitória
+    if (row.fonte === 'nao_encontrado') {
+      const idadeMs = Date.now() - new Date((row as any).buscado_em).getTime();
+      if (idadeMs > 7 * 24 * 60 * 60 * 1000) return null;
+    }
+    return row;
+  }
+
+  clearGeoNaoEncontrado(): number {
+    const r = this.db.prepare("DELETE FROM owners_geo WHERE fonte = 'nao_encontrado'").run();
+    return r.changes;
   }
 
   saveOwnerGeo(geo: OwnerGeoRow): void {
