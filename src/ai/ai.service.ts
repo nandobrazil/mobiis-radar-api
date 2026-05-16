@@ -37,9 +37,9 @@ export class AiService implements OnModuleInit {
     this.logger.log(`Provider ativo: ${this.provider.nome} / modelo: ${this.provider.modelo}`);
   }
 
-  async analisarLote(clientes: ClienteRisco[]): Promise<Map<string, AnaliseCliente>> {
+  async analisarLote(clientes: ClienteRisco[], contextos?: Map<string, string>): Promise<Map<string, AnaliseCliente>> {
     try {
-      const result = await this.provider.analisarLote(clientes);
+      const result = await this.provider.analisarLote(clientes, contextos);
       const missing = clientes.filter(c => !result.has(c.owner_id)).map(c => c.nome_cliente);
       if (missing.length) {
         this.logger.warn(`${missing.length} cliente(s) sem análise no retorno do provider: ${missing.join(', ')}`);

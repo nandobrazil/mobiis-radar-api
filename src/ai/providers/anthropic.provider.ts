@@ -16,13 +16,13 @@ export class AnthropicProvider implements IAiProvider {
     this.modelo = modelo;
   }
 
-  async analisarLote(clientes: ClienteRisco[]): Promise<Map<string, AnaliseCliente>> {
+  async analisarLote(clientes: ClienteRisco[], contextos?: Map<string, string>): Promise<Map<string, AnaliseCliente>> {
     this.logger.log(`Lote de ${clientes.length} clientes → ${this.modelo}`);
 
     const response = await this.client.messages.create({
       model: this.modelo,
       max_tokens: 8000,
-      messages: [{ role: 'user', content: buildChurnPromptLote(clientes) }],
+      messages: [{ role: 'user', content: buildChurnPromptLote(clientes, contextos) }],
     });
 
     const raw = (response.content[0] as any).text as string;

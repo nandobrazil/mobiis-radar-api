@@ -15,7 +15,7 @@ export class GptProvider implements IAiProvider {
     this.modelo = modelo;
   }
 
-  async analisarLote(clientes: ClienteRisco[]): Promise<Map<string, AnaliseCliente>> {
+  async analisarLote(clientes: ClienteRisco[], contextos?: Map<string, string>): Promise<Map<string, AnaliseCliente>> {
     this.logger.log(`Lote de ${clientes.length} clientes → ${this.modelo}`);
 
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -27,7 +27,7 @@ export class GptProvider implements IAiProvider {
       body: JSON.stringify({
         model: this.modelo,
         max_tokens: 8000,
-        messages: [{ role: 'user', content: buildChurnPromptLote(clientes) }],
+        messages: [{ role: 'user', content: buildChurnPromptLote(clientes, contextos) }],
       }),
     });
 

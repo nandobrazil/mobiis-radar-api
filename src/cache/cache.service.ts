@@ -81,6 +81,14 @@ export class CacheService implements OnModuleInit {
         cached_at         TEXT NOT NULL
       );
 
+      -- Contexto escrito pelo CS por cliente — permanente, nunca expira
+      CREATE TABLE IF NOT EXISTS cliente_contexto (
+        owner_id      TEXT PRIMARY KEY,
+        contexto      TEXT NOT NULL,
+        autor         TEXT,
+        atualizado_em TEXT NOT NULL
+      );
+
       -- Lista de owners do SQL Server (TTL de 7 dias)
       CREATE TABLE IF NOT EXISTS owners_lista (
         owner_id   TEXT PRIMARY KEY,
@@ -122,6 +130,15 @@ export class CacheService implements OnModuleInit {
     ]) {
       try { this.db.prepare(migration).run(); } catch { /* coluna já existe */ }
     }
+    // Migração: tabela de contexto CS (pode não existir em bancos antigos)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS cliente_contexto (
+        owner_id      TEXT PRIMARY KEY,
+        contexto      TEXT NOT NULL,
+        autor         TEXT,
+        atualizado_em TEXT NOT NULL
+      );
+    `);
 
     this.logger.log('SQLite inicializado em ./data/radar-cache.db');
   }
@@ -254,8 +271,12 @@ export class CacheService implements OnModuleInit {
 
   // ─── Cache de análises Claude (invalidado por hash dos dados) ────────────
 
-  // Fingerprint determinístico das métricas — se mudar algum número, o hash muda
-  hashCliente(c: { dias_sem_atividade: number; acoes_90d: number; acoes_30d: number; acoes_core_30d: number; acoes_core_90d: number; acoes_negativas_30d: number; entidades_utilizadas: number; usuarios_ativos: number; acoes_automatizadas_30d: number }): string {
+  // Fingerprint determinístico das métricas + contexto CS.
+  // Qualquer mudança nos números OU no contexto invalida o cache e força nova análise.
+  hashCliente(
+    c: { dias_sem_atividade: number; acoes_90d: number; acoes_30d: number; acoes_core_30d: number; acoes_core_90d: number; acoes_negativas_30d: number; entidades_utilizadas: number; usuarios_ativos: number; acoes_automatizadas_30d: number },
+    contexto?: string,
+  ): string {
     return [
       c.dias_sem_atividade,
       c.acoes_90d,
@@ -266,7 +287,32 @@ export class CacheService implements OnModuleInit {
       c.entidades_utilizadas,
       c.usuarios_ativos,
       c.acoes_automatizadas_30d,
+      contexto ?? '',
     ].join('|');
+  }
+
+  // ─── Contexto CS por cliente (permanente) ─────────────────────────────────
+
+  getContexto(ownerId: string): ClienteContextoRow | null {
+    return this.db.prepare(
+      'SELECT * FROM cliente_contexto WHERE owner_id = ?'
+    ).get(ownerId) as ClienteContextoRow | null;
+  }
+
+  saveContexto(ownerId: string, contexto: string, autor?: string): void {
+    this.db.prepare(`
+      INSERT OR REPLACE INTO cliente_contexto (owner_id, contexto, autor, atualizado_em)
+      VALUES (?, ?, ?, ?)
+    `).run(ownerId, contexto, autor ?? null, new Date().toISOString());
+  }
+
+  deleteContexto(ownerId: string): void {
+    this.db.prepare('DELETE FROM cliente_contexto WHERE owner_id = ?').run(ownerId);
+  }
+
+  getAllContextos(): Map<string, ClienteContextoRow> {
+    const rows = this.db.prepare('SELECT * FROM cliente_contexto').all() as ClienteContextoRow[];
+    return new Map(rows.map(r => [r.owner_id, r]));
   }
 
   // Retorna análise cacheada só se o hash bater — dados iguais = análise válida
@@ -413,4 +459,11 @@ export interface CidadeGeoRow {
   lat: number | null;
   lng: number | null;
   buscado_em?: string;
+}
+
+export interface ClienteContextoRow {
+  owner_id: string;
+  contexto: string;
+  autor: string | null;
+  atualizado_em: string;
 }

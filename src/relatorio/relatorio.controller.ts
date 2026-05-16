@@ -1,5 +1,5 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Post, Query } from '@nestjs/common';
+import { ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { RelatorioService } from './relatorio.service';
 import { ClienteComAnalise, DetalheCliente } from './relatorio.types';
 
@@ -33,6 +33,47 @@ export class RelatorioController {
     @Query('nocache') nocache?: string,
   ): Promise<ClienteComAnalise> {
     return this.relatorioService.getCliente(ownerId, nocache === 'true');
+  }
+
+  @Get('cliente/:ownerId/contexto')
+  @ApiOperation({ summary: 'Lê o contexto CS de um cliente' })
+  @ApiParam({ name: 'ownerId', description: 'GUID do owner' })
+  @ApiResponse({ status: 200, description: 'Contexto salvo pelo CS.' })
+  @ApiResponse({ status: 404, description: 'Nenhum contexto salvo para esse cliente.' })
+  getContexto(@Param('ownerId') ownerId: string) {
+    const ctx = this.relatorioService.getContexto(ownerId);
+    if (!ctx) throw new NotFoundException('Nenhum contexto salvo para esse cliente.');
+    return ctx;
+  }
+
+  @Post('cliente/:ownerId/contexto')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Salva ou atualiza o contexto CS de um cliente',
+    description: 'O contexto é incluído no prompt da IA nas próximas análises. Qualquer alteração invalida o cache e força re-análise automática.',
+  })
+  @ApiParam({ name: 'ownerId', description: 'GUID do owner' })
+  @ApiBody({ schema: { properties: { contexto: { type: 'string' }, autor: { type: 'string' } }, required: ['contexto'] } })
+  @ApiResponse({ status: 200, description: 'Contexto salvo.' })
+  saveContexto(
+    @Param('ownerId') ownerId: string,
+    @Body() body: { contexto: string; autor?: string },
+  ) {
+    if (!body?.contexto?.trim()) {
+      throw new NotFoundException('Campo "contexto" é obrigatório e não pode ser vazio.');
+    }
+    this.relatorioService.saveContexto(ownerId, body.contexto.trim(), body.autor);
+    return { ok: true, owner_id: ownerId };
+  }
+
+  @Delete('cliente/:ownerId/contexto')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Remove o contexto CS de um cliente' })
+  @ApiParam({ name: 'ownerId', description: 'GUID do owner' })
+  @ApiResponse({ status: 200, description: 'Contexto removido.' })
+  deleteContexto(@Param('ownerId') ownerId: string) {
+    this.relatorioService.deleteContexto(ownerId);
+    return { ok: true, owner_id: ownerId };
   }
 
   @Get('cliente/:ownerId/detalhe')

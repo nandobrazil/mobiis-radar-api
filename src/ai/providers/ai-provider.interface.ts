@@ -4,7 +4,7 @@ import { AnaliseCliente } from '../ai.service';
 export interface IAiProvider {
   readonly nome: string;
   readonly modelo: string;
-  analisarLote(clientes: ClienteRisco[]): Promise<Map<string, AnaliseCliente>>;
+  analisarLote(clientes: ClienteRisco[], contextos?: Map<string, string>): Promise<Map<string, AnaliseCliente>>;
 }
 
 export function parseRespostaLote(raw: string, providerNome = 'AI'): Map<string, AnaliseCliente> {

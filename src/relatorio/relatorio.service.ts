@@ -29,14 +29,17 @@ export class RelatorioService {
     const clientes = await this.clientesService.getTodos(skipCache);
     this.logger.log(`Total de clientes: ${clientes.length} | skipCache=${skipCache}`);
 
+    const contextos = this.cache.getAllContextos();
+
     const comCache: ClienteComAnalise[] = [];
     const semCache: ClienteRisco[] = [];
 
     for (const c of clientes) {
-      const hash = this.cache.hashCliente(c);
+      const ctx = contextos.get(c.owner_id);
+      const hash = this.cache.hashCliente(c, ctx?.contexto);
       const cached = !skipCache && this.cache.getAnalise(c.owner_id, hash);
       if (cached) {
-        comCache.push({ cliente: c, analise: cached });
+        comCache.push({ cliente: c, analise: cached, contexto: ctx ?? null });
       } else {
         semCache.push(c);
       }
@@ -48,12 +51,19 @@ export class RelatorioService {
     const CHUNK = 30;
     for (let i = 0; i < semCache.length; i += CHUNK) {
       const chunk = semCache.slice(i, i + CHUNK);
-      const analises = await this.aiService.analisarLote(chunk);
+      const chunkContextos = new Map(
+        chunk.flatMap(c => {
+          const ctx = contextos.get(c.owner_id);
+          return ctx ? [[c.owner_id, ctx.contexto]] : [];
+        })
+      );
+      const analises = await this.aiService.analisarLote(chunk, chunkContextos);
       for (const c of chunk) {
-        const hash = this.cache.hashCliente(c);
+        const ctx = contextos.get(c.owner_id);
+        const hash = this.cache.hashCliente(c, ctx?.contexto);
         const analise = analises.get(c.owner_id) ?? null;
         if (analise) this.cache.saveAnalise(c.owner_id, hash, analise);
-        novos.push({ cliente: c, analise, erro: analise ? undefined : true });
+        novos.push({ cliente: c, analise, contexto: ctx ?? null, erro: analise ? undefined : true });
       }
     }
 
@@ -70,14 +80,28 @@ export class RelatorioService {
   async getCliente(ownerId: string, nocache = false): Promise<ClienteComAnalise> {
     const skipCache = nocache && this.allowNoCache;
     const cliente = await this.clientesService.getByOwnerId(ownerId, skipCache);
-    const hash = this.cache.hashCliente(cliente);
+    const ctx = this.cache.getContexto(ownerId);
+    const hash = this.cache.hashCliente(cliente, ctx?.contexto);
     const cached = !skipCache && this.cache.getAnalise(cliente.owner_id, hash);
-    if (cached) return { cliente, analise: cached };
+    if (cached) return { cliente, analise: cached, contexto: ctx ?? null };
 
-    const analises = await this.aiService.analisarLote([cliente]);
+    const contextos = ctx ? new Map([[ownerId, ctx.contexto]]) : new Map<string, string>();
+    const analises = await this.aiService.analisarLote([cliente], contextos);
     const analise = analises.get(cliente.owner_id) ?? null;
     if (analise) this.cache.saveAnalise(cliente.owner_id, hash, analise);
-    return { cliente, analise, erro: analise ? undefined : true };
+    return { cliente, analise, contexto: ctx ?? null, erro: analise ? undefined : true };
+  }
+
+  getContexto(ownerId: string) {
+    return this.cache.getContexto(ownerId);
+  }
+
+  saveContexto(ownerId: string, contexto: string, autor?: string) {
+    this.cache.saveContexto(ownerId, contexto, autor);
+  }
+
+  deleteContexto(ownerId: string) {
+    this.cache.deleteContexto(ownerId);
   }
 
   async getDetalhe(ownerId: string): Promise<DetalheCliente> {

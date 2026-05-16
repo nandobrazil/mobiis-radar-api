@@ -141,21 +141,28 @@ function contextoCalendario(): string {
 }
 
 // ─── Prompt principal ─────────────────────────────────────────────────────────
-export function buildChurnPromptLote(clientes: ClienteRisco[]): string {
-  const payload = clientes.map(c => ({
-    owner_id: c.owner_id,
-    nome: c.nome_cliente,
-    dias_sem_atividade: c.dias_sem_atividade,
-    acoes_90d: c.acoes_90d,
-    acoes_30d: c.acoes_30d,
-    acoes_core_30d: c.acoes_core_30d,
-    acoes_core_90d: c.acoes_core_90d,
-    acoes_negativas_30d: c.acoes_negativas_30d,
-    entidades_utilizadas: c.entidades_utilizadas,
-    usuarios_ativos: c.usuarios_ativos,
-    acoes_automatizadas_30d: c.acoes_automatizadas_30d,
-    ...calcularMetricas(c),
-  }));
+export function buildChurnPromptLote(
+  clientes: ClienteRisco[],
+  contextos: Map<string, string> = new Map(),
+): string {
+  const payload = clientes.map(c => {
+    const base = {
+      owner_id: c.owner_id,
+      nome: c.nome_cliente,
+      dias_sem_atividade: c.dias_sem_atividade,
+      acoes_90d: c.acoes_90d,
+      acoes_30d: c.acoes_30d,
+      acoes_core_30d: c.acoes_core_30d,
+      acoes_core_90d: c.acoes_core_90d,
+      acoes_negativas_30d: c.acoes_negativas_30d,
+      entidades_utilizadas: c.entidades_utilizadas,
+      usuarios_ativos: c.usuarios_ativos,
+      acoes_automatizadas_30d: c.acoes_automatizadas_30d,
+      ...calcularMetricas(c),
+    };
+    const ctx = contextos.get(c.owner_id);
+    return ctx ? { ...base, contexto_cs: ctx } : base;
+  });
 
   return `Você é analista especializado em padrão de comportamento de clientes SaaS B2B, com foco em detecção antecipada de churn.
 
@@ -216,6 +223,13 @@ Exemplo: "Padrão esporádico com 2–3 ações semanais concentradas em Cargas"
 ✗ "60 dias sem atividade" — já está nos dados, não acrescenta análise
 
 **resumo** — 1 frase descrevendo o comportamento e o risco considerando o perfil desse cliente específico
+
+## Contexto do CS (quando presente)
+Alguns clientes têm um campo contexto_cs — texto escrito pelo time interno de Customer Success explicando situações específicas daquele cliente: sazonalidade, mudanças internas, motivo de queda de uso, negociação em andamento, etc.
+- Trate esse campo como informação privilegiada de quem acompanha o cliente de perto
+- Use para interpretar os números de forma mais precisa (ex: "queda esperada pois cliente está em onboarding de novo módulo")
+- Quando o contexto contradisser o sinal dos dados, justifique explicitamente no resumo
+- Nunca ignore o contexto_cs — ele sempre enriquece a análise
 
 ## O que NÃO fazer
 - Não aplique "sem uso há X dias = risco Y" de forma genérica

@@ -15,7 +15,7 @@ export class GeminiProvider implements IAiProvider {
     this.modelo = modelo;
   }
 
-  async analisarLote(clientes: ClienteRisco[]): Promise<Map<string, AnaliseCliente>> {
+  async analisarLote(clientes: ClienteRisco[], contextos?: Map<string, string>): Promise<Map<string, AnaliseCliente>> {
     this.logger.log(`Lote de ${clientes.length} clientes → ${this.modelo}`);
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.modelo}:generateContent?key=${this.token}`;
@@ -24,7 +24,7 @@ export class GeminiProvider implements IAiProvider {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: buildChurnPromptLote(clientes) }] }],
+        contents: [{ parts: [{ text: buildChurnPromptLote(clientes, contextos) }] }],
         generationConfig: { responseMimeType: 'application/json' },
       }),
     });

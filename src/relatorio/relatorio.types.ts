@@ -1,9 +1,16 @@
 import { AnaliseCliente } from '../ai/ai.service';
 import { ClienteRisco } from '../clientes/clientes.types';
 
+export interface ClienteContexto {
+  contexto: string;
+  autor: string | null;
+  atualizado_em: string;
+}
+
 export interface ClienteComAnalise {
   cliente: ClienteRisco;
   analise: AnaliseCliente | null;
+  contexto: ClienteContexto | null;
   erro?: true;
 }
 
