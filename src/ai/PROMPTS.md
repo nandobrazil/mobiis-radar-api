@@ -1,6 +1,6 @@
 # AI Prompts — Mobiis Radar
 
-> Documentação dos prompts e da lógica determinística em `src/ai/prompts.ts`.  
+> Documentação dos prompts e da lógica determinística em `src/ai/prompts.ts`.
 > Cada seção corresponde a um bloco independente do arquivo — apto para uso como slide de apresentação.
 
 ---
@@ -39,14 +39,14 @@
                     └─────────────────────────────────────┘
 ```
 
-**Princípio:** tudo que pode ser calculado deterministicamente **não passa pela IA**.  
+**Princípio:** tudo que pode ser calculado deterministicamente **não passa pela IA**.
 A IA é chamada apenas onde há julgamento contextual que os números sozinhos não capturam.
 
 ---
 
 ## Slide 2 — Contexto da Plataforma (`CONTEXTO_PLATAFORMA`)
 
-**O que é:** constante de texto injetada em todos os prompts de churn. Funciona como "briefing fixo" da Fretefy para o modelo.
+**O que é:** constante de texto injetada em todos os prompts de churn. Funciona como "briefing fixo" da Mobiis para o modelo.
 
 **Conteúdo:**
 
@@ -150,7 +150,7 @@ MELHORIA  → oportunidade de expansão de uso
 Analista especializado em padrão de comportamento SaaS B2B
 
 [Contexto fixo]
-CONTEXTO_PLATAFORMA (regras de negócio da Fretefy)
+CONTEXTO_PLATAFORMA (regras de negócio da Mobiis)
 
 [Data de referência]
 Data atual + posição no mês (para avaliar ausências sazonais)
@@ -259,7 +259,7 @@ JSON com 6 campos
 }
 ```
 
-**Cache:** resultado salvo em SQLite por combinação de CNAEs. Invalidado se novos owners forem encontrados ou `?nocache=true`.  
+**Cache:** resultado salvo em SQLite por combinação de CNAEs. Invalidado se novos owners forem encontrados ou `?nocache=true`.
 **HTTP:** `200` = processado pela IA agora | `203` = servido do cache (`de_cache: true`).
 
 ---

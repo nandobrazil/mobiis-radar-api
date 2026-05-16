@@ -1,6 +1,6 @@
 # Mobiis Radar — Documentação Técnica
 
-> Backend NestJS para análise de churn de clientes Fretefy com IA, cache em SQLite e enriquecimento via BrasilAPI.
+> Backend NestJS para análise de churn de clientes Mobiis com IA, cache em SQLite e enriquecimento via BrasilAPI.
 
 ---
 
@@ -9,7 +9,7 @@
 | Camada | Tecnologia |
 |---|---|
 | Framework | NestJS (TypeScript) |
-| Banco principal | SQL Server (mssql) — dados transacionais da Fretefy |
+| Banco principal | SQL Server (mssql) — dados transacionais da Mobiis |
 | Cache local | SQLite (better-sqlite3) — leituras rápidas, zero latência de rede |
 | IA | Anthropic Claude / Google Gemini / OpenAI GPT (troca por env var) |
 | Geocoding | BrasilAPI (CNPJ) + Nominatim + Photon (fallback lat/lng) |
@@ -66,7 +66,7 @@
 
 ### 1. Métricas de atividade por cliente (ClientesService)
 
-Fonte: `ExecucaoHistorico` + `Owners`  
+Fonte: `ExecucaoHistorico` + `Owners`
 Filtros fixos: `o.LicenseType = 3` | `o.Status = 1` | `o.Type IN (1, 3)`
 
 ```sql
@@ -88,8 +88,8 @@ WHERE e.DhExecucao >= DATEADD(DAY,-90,GETDATE())
 GROUP BY e.OwnerId, o.Name
 ```
 
-**Entidades core (Entidade IN (1,5)):** Carga e Reservas  
-**Ações negativas (TipoAcao IN (9,12,14,21)):** cancelamentos, exclusões, desativações  
+**Entidades core (Entidade IN (1,5)):** Carga e Reservas
+**Ações negativas (TipoAcao IN (9,12,14,21)):** cancelamentos, exclusões, desativações
 **Origens automatizadas (OrigemExecucao IN (2,4,5)):** API, Automação, Processo automático
 
 ---

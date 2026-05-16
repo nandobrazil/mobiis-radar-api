@@ -372,7 +372,7 @@ export interface InsightsPayload {
 }
 
 export function buildInsightsPrompt(payload: InsightsPayload): string {
-  return `Você é analista estratégico de Customer Success de uma plataforma SaaS B2B de logística (Fretefy — TMS/YMS para transportadoras e embarcadoras).
+  return `Você é analista estratégico de Customer Success de uma plataforma SaaS B2B de logística (Mobiis — TMS/YMS para transportadoras e embarcadoras).
 
 ## Base de clientes analisada
 
@@ -545,7 +545,7 @@ export function buildMatchCnaePrompt(
 
   return `Você é um consultor especializado em vendas B2B de software TMS/YMS para empresas de logística e transporte no Brasil.
 
-## Plataforma: Fretefy
+## Plataforma: Mobiis
 - TMS/YMS SaaS B2B focado em transportadoras e embarcadoras
 - Core do produto: gestão de Cargas e Reservas de doca
 - Módulos complementares: TabelaFrete, Acordo Comercial, BloqueioDoca, Automação, API de integração
@@ -555,7 +555,7 @@ export function buildMatchCnaePrompt(
 - CNAE Principal: ${input.cnae_fiscal} — ${segmento}
 ${cnaesSec ? `- CNAEs Secundários: ${cnaesSec}` : ''}
 
-## Base de clientes similares na Fretefy (${matches.length} encontrado${matches.length !== 1 ? 's' : ''})
+## Base de clientes similares na Mobiis (${matches.length} encontrado${matches.length !== 1 ? 's' : ''})
 ${semDados
   ? 'Nenhum cliente com CNAE similar encontrado na base. Analise o segmento com base no CNAE informado.'
   : [blocoExatos, blocoDivisao].filter(Boolean).join('\n\n')}
@@ -565,7 +565,7 @@ ${semDados
 - Presença por estado: ${blocoUfs}
 
 ## Tarefa
-Com base no perfil do prospect (CNAE, setor de atuação) e na experiência da Fretefy com clientes similares, gere insights práticos de venda.
+Com base no perfil do prospect (CNAE, setor de atuação) e na experiência da Mobiis com clientes similares, gere insights práticos de venda.
 
 ${semDados
   ? 'Foco no segmento e nas dores típicas do setor, sem referência a clientes específicos.'
@@ -619,7 +619,7 @@ export function buildChurnPromptLote(
 
   return `Você é analista especializado em padrão de comportamento de clientes SaaS B2B, com foco em detecção antecipada de churn.
 
-## Plataforma: Fretefy (TMS/YMS)
+## Plataforma: Mobiis (TMS/YMS)
 ${CONTEXTO_PLATAFORMA}
 
 ## Data de referência

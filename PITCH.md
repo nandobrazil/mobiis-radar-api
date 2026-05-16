@@ -1,6 +1,6 @@
 # Mobiis Radar — Por que esse projeto importa
 
-> Análise de churn com IA para clientes SaaS B2B — construído sobre dados reais da Fretefy.
+> Análise de churn com IA para clientes SaaS B2B — construído sobre dados reais da Mobiis.
 
 ---
 
@@ -8,13 +8,13 @@
 
 Em SaaS B2B, **churn silencioso** é o inimigo mais caro.
 
-O cliente não liga para cancelar. Ele simplesmente para de usar.  
+O cliente não liga para cancelar. Ele simplesmente para de usar.
 Quando alguém percebe, o contrato já acabou — ou pior, a renovação foi negada.
 
-Na Fretefy, cada cliente representa **receita recorrente mensal (MRR)**.  
+Na Mobiis, cada cliente representa **receita recorrente mensal (MRR)**.
 Perder um cliente não é só perder o ticket do mês — é perder todos os meses seguintes.
 
-O problema: os sinais estão todos lá, nos logs de uso.  
+O problema: os sinais estão todos lá, nos logs de uso.
 A falta: alguém (ou algo) que os leia, entenda e aja antes que seja tarde.
 
 **Mobiis Radar é esse algo.**
@@ -92,7 +92,7 @@ Com 200 clientes ativos e análise semanal:
 = ~R$ 7,20/mês (4 rodadas)
 ```
 
-**Menos de R$ 10/mês** para monitorar 200 clientes com IA.  
+**Menos de R$ 10/mês** para monitorar 200 clientes com IA.
 Cache inteligente reduz isso para **centavos por dia** na operação corrente — só reanalisam clientes com dados novos.
 
 ### Independência de infraestrutura
@@ -161,14 +161,14 @@ cliente X → score 47 → MÉDIO RISCO
 
 **1. Análise pelo padrão do próprio cliente, não por régua genérica**
 
-Um cliente que usa a plataforma 2x por mês com 15 dias de inatividade está **dentro do padrão**.  
+Um cliente que usa a plataforma 2x por mês com 15 dias de inatividade está **dentro do padrão**.
 Um cliente que usa todo dia com 3 dias de inatividade está **em ruptura**.
 
 O sistema identifica o baseline histórico individual e avalia o comportamento recente contra esse baseline — não contra uma média do mercado.
 
 **2. Contexto temporal embutido no prompt**
 
-A data atual, o dia do mês e os dias restantes são injetados em cada análise.  
+A data atual, o dia do mês e os dias restantes são injetados em cada análise.
 Clientes com padrão de fechamento mensal não são penalizados por inatividade no meio do mês.
 
 **3. Auditabilidade total**
@@ -184,7 +184,7 @@ Não é uma caixa-preta — cada decisão é explicável.
 
 **4. Ferramenta de prospecção com IA (match-cnae)**
 
-Insere o CNPJ de um prospect → sistema encontra clientes com CNAE idêntico ou do mesmo setor → IA gera um argumento de venda personalizado com módulos recomendados, abordagem sugerida e objeções conhecidas.  
+Insere o CNPJ de um prospect → sistema encontra clientes com CNAE idêntico ou do mesmo setor → IA gera um argumento de venda personalizado com módulos recomendados, abordagem sugerida e objeções conhecidas.
 A IA usa os dados reais da base (quais módulos clientes similares usam, em quais estados estão, qual a saúde deles) como evidência para o argumento.
 
 ---
@@ -199,8 +199,8 @@ A IA usa os dados reais da base (quais módulos clientes similares usam, em quai
 
 **[0:00 – 1:30] O problema**
 
-> "Todo mês a Fretefy perde clientes que ninguém viu indo embora.  
-> Não porque faltou produto — porque faltou sinal.  
+> "Todo mês a Mobiis perde clientes que ninguém viu indo embora.
+> Não porque faltou produto — porque faltou sinal.
 > Os dados estavam todos aqui, no SQL Server. Só precisavam de alguém para ler."
 
 Mostrar: painel com lista de clientes ordenada por risco (ALTO primeiro, vermelho).
@@ -251,19 +251,19 @@ Mostrar:
 
 Mostrar: `/relatorio/status` durante processamento em lote.
 
-> "200 clientes analisados em lote. Cada chunk de 3, distribuídos para reduzir viés.  
-> Custo total da rodada: menos de R$ 2,00.  
+> "200 clientes analisados em lote. Cada chunk de 3, distribuídos para reduzir viés.
+> Custo total da rodada: menos de R$ 2,00.
 > Cache inteligente — só reanalisou os 23 com dados novos desde ontem."
 
 ---
 
 **[8:30 – 10:00] ROI e encerramento**
 
-> "Se esse sistema identificar e salvar 5 clientes por mês...  
-> A R$ 8.000 de ticket médio, são R$ 40.000 de MRR preservado por mês.  
-> R$ 480.000 em 12 meses — com custo operacional de R$ 7,20/mês de IA.  
->  
-> Zero infraestrutura nova. Os dados já estavam lá.  
+> "Se esse sistema identificar e salvar 5 clientes por mês...
+> A R$ 8.000 de ticket médio, são R$ 40.000 de MRR preservado por mês.
+> R$ 480.000 em 12 meses — com custo operacional de R$ 7,20/mês de IA.
+>
+> Zero infraestrutura nova. Os dados já estavam lá.
 > A diferença é que agora alguém está lendo."
 
 ---
@@ -290,5 +290,5 @@ Mostrar: `/relatorio/status` durante processamento em lote.
 | 🤖 Inovação e Uso de IA | 10/10 | 3 camadas, análise por padrão individual, auditável, contexto CS, match-cnae |
 | 🎤 Apresentação e Demo | 10/10 | Dashboard ao vivo, narrativa clara, demo em 10min com dados reais |
 
-> **O Radar não é um experimento de IA.**  
+> **O Radar não é um experimento de IA.**
 > É uma ferramenta que paga a si mesma na primeira renovação que salvar.
