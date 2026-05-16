@@ -226,7 +226,7 @@ export class RelatorioService {
 
     for (const c of input.cnaes_secundarios ?? []) {
       allInputCnaes.add(c.codigo);
-      inputDivisoes.add(String(c.codigo).substring(0, 2));
+      // Não adiciona a divisão dos CNAEs secundários — DIVISAO match usa apenas o setor do CNAE principal
     }
 
     const ownerInfoMap = this.cache.getOwnerInfoMap();
