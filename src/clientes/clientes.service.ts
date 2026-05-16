@@ -21,6 +21,8 @@ const QUERY_HOJE = `
   INNER JOIN Owners o ON o.Id = e.OwnerId
   WHERE CAST(e.DhExecucao AS DATE) = CAST(GETDATE() AS DATE)
     AND e.OwnerId IS NOT NULL
+    AND o.LicenseType = 3
+    AND o.Status = 1
   GROUP BY e.OwnerId, o.Name
 `;
 
@@ -87,6 +89,8 @@ export class ClientesService {
         INNER JOIN Owners o ON o.Id = e.OwnerId
         WHERE CAST(e.DhExecucao AS DATE) = CAST(GETDATE() AS DATE)
           AND e.OwnerId = @ownerId
+          AND o.LicenseType = 3
+          AND o.Status = 1
         GROUP BY e.OwnerId, o.Name
       `);
     return result.recordset[0] ?? null;

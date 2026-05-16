@@ -69,16 +69,60 @@ export class CacheService implements OnModuleInit {
 
       -- Análises cacheadas por hash dos dados — válidas enquanto os dados não mudarem
       CREATE TABLE IF NOT EXISTS analises_cache (
-        owner_id         TEXT NOT NULL PRIMARY KEY,
-        data_hash        TEXT NOT NULL,
-        nivel_risco      TEXT NOT NULL,
-        score_ia         INTEGER NOT NULL,
-        resumo           TEXT NOT NULL,
-        motivos          TEXT NOT NULL,
-        acao_recomendada TEXT NOT NULL,
-        cached_at        TEXT NOT NULL
+        owner_id          TEXT NOT NULL PRIMARY KEY,
+        data_hash         TEXT NOT NULL,
+        nivel_risco       TEXT NOT NULL,
+        score_ia          INTEGER NOT NULL,
+        perfil_uso        TEXT NOT NULL DEFAULT 'MODERADO',
+        padrao_historico  TEXT NOT NULL DEFAULT '',
+        resumo            TEXT NOT NULL,
+        motivos           TEXT NOT NULL,
+        acao_recomendada  TEXT NOT NULL,
+        cached_at         TEXT NOT NULL
+      );
+
+      -- Lista de owners do SQL Server (TTL de 7 dias)
+      CREATE TABLE IF NOT EXISTS owners_lista (
+        owner_id   TEXT PRIMARY KEY,
+        nome       TEXT,
+        tipo       INTEGER,
+        status     INTEGER,
+        documento  TEXT,
+        synced_at  TEXT NOT NULL
+      );
+
+      -- Endereço enriquecido por CNPJ via BrasilAPI (permanente — nunca re-busca)
+      CREATE TABLE IF NOT EXISTS owners_geo (
+        documento   TEXT PRIMARY KEY,
+        cep         TEXT,
+        logradouro  TEXT,
+        numero      TEXT,
+        complemento TEXT,
+        bairro      TEXT,
+        municipio   TEXT,
+        uf          TEXT,
+        fonte       TEXT NOT NULL DEFAULT 'brasilapi',
+        buscado_em  TEXT NOT NULL
+      );
+
+      -- Lat/lng por cidade+uf via Nominatim (permanente — nunca re-busca)
+      CREATE TABLE IF NOT EXISTS cidades_geo (
+        chave      TEXT PRIMARY KEY,
+        municipio  TEXT,
+        uf         TEXT,
+        lat        REAL,
+        lng        REAL,
+        buscado_em TEXT NOT NULL
       );
     `);
+    // Migrações para bancos existentes sem as colunas novas
+    for (const migration of [
+      "ALTER TABLE analises_cache ADD COLUMN perfil_uso TEXT NOT NULL DEFAULT 'MODERADO'",
+      "ALTER TABLE analises_cache ADD COLUMN padrao_historico TEXT NOT NULL DEFAULT ''",
+    ]) {
+      try { this.db.prepare(migration).run(); } catch { /* coluna já existe */ }
+    }
+
     this.logger.log('SQLite inicializado em ./data/radar-cache.db');
   }
 
@@ -126,6 +170,8 @@ export class CacheService implements OnModuleInit {
         WHERE e.DhExecucao >= @dataMin
           AND e.DhExecucao < DATEADD(DAY, 1, CONVERT(DATE, @dataMax))
           AND e.OwnerId IS NOT NULL
+          AND o.LicenseType = 3
+          AND o.Status = 1
         GROUP BY e.OwnerId, o.Name, CONVERT(VARCHAR(10), e.DhExecucao, 23)
       `);
 
@@ -233,6 +279,8 @@ export class CacheService implements OnModuleInit {
     return {
       nivel_risco: row.nivel_risco,
       score_ia: row.score_ia,
+      perfil_uso: row.perfil_uso ?? 'MODERADO',
+      padrao_historico: row.padrao_historico ?? '',
       resumo: row.resumo,
       motivos: JSON.parse(row.motivos),
       acao_recomendada: row.acao_recomendada,
@@ -242,18 +290,85 @@ export class CacheService implements OnModuleInit {
   saveAnalise(ownerId: string, hash: string, analise: AnaliseCliente): void {
     this.db.prepare(`
       INSERT OR REPLACE INTO analises_cache
-        (owner_id, data_hash, nivel_risco, score_ia, resumo, motivos, acao_recomendada, cached_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        (owner_id, data_hash, nivel_risco, score_ia, perfil_uso, padrao_historico, resumo, motivos, acao_recomendada, cached_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       ownerId,
       hash,
-      analise.nivel_risco   ?? 'BAIXO',
-      analise.score_ia      ?? 0,
-      analise.resumo        ?? '',
+      analise.nivel_risco       ?? 'BAIXO',
+      analise.score_ia          ?? 0,
+      analise.perfil_uso        ?? 'MODERADO',
+      analise.padrao_historico  ?? '',
+      analise.resumo            ?? '',
       JSON.stringify(analise.motivos ?? []),
-      analise.acao_recomendada ?? '',
+      analise.acao_recomendada  ?? '',
       new Date().toISOString(),
     );
+  }
+
+  // ─── Owners lista (TTL 7 dias) ────────────────────────────────────────────
+
+  isOwnersListStale(): boolean {
+    const row = this.db.prepare(
+      'SELECT synced_at FROM owners_lista ORDER BY synced_at DESC LIMIT 1'
+    ).get() as { synced_at: string } | undefined;
+    if (!row) return true;
+    const idadeMs = Date.now() - new Date(row.synced_at).getTime();
+    return idadeMs > 7 * 24 * 60 * 60 * 1000;
+  }
+
+  getOwnersList(): OwnerListaRow[] | null {
+    if (this.isOwnersListStale()) return null;
+    return this.db.prepare('SELECT * FROM owners_lista').all() as OwnerListaRow[];
+  }
+
+  saveOwnersList(owners: OwnerListaRow[]): void {
+    const now = new Date().toISOString();
+    const del = this.db.prepare('DELETE FROM owners_lista');
+    const ins = this.db.prepare(
+      'INSERT OR REPLACE INTO owners_lista (owner_id, nome, tipo, status, documento, synced_at) VALUES (?, ?, ?, ?, ?, ?)'
+    );
+    this.db.transaction(() => {
+      del.run();
+      for (const o of owners) ins.run(o.owner_id, o.nome, o.tipo, o.status, o.documento, now);
+    })();
+  }
+
+  // ─── Geo por CNPJ (permanente) ────────────────────────────────────────────
+
+  getOwnerGeo(documento: string): OwnerGeoRow | null {
+    return this.db.prepare(
+      'SELECT * FROM owners_geo WHERE documento = ?'
+    ).get(documento) as OwnerGeoRow | null;
+  }
+
+  saveOwnerGeo(geo: OwnerGeoRow): void {
+    this.db.prepare(`
+      INSERT OR REPLACE INTO owners_geo
+        (documento, cep, logradouro, numero, complemento, bairro, municipio, uf, fonte, buscado_em)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      geo.documento, geo.cep, geo.logradouro, geo.numero,
+      geo.complemento, geo.bairro, geo.municipio, geo.uf,
+      geo.fonte, new Date().toISOString(),
+    );
+  }
+
+  // ─── Geo por cidade/UF (permanente) ───────────────────────────────────────
+
+  getCidadeGeo(municipio: string, uf: string): CidadeGeoRow | null {
+    const chave = `${municipio.toUpperCase()}|${uf.toUpperCase()}`;
+    return this.db.prepare(
+      'SELECT * FROM cidades_geo WHERE chave = ?'
+    ).get(chave) as CidadeGeoRow | null;
+  }
+
+  saveCidadeGeo(municipio: string, uf: string, lat: number | null, lng: number | null): void {
+    const chave = `${municipio.toUpperCase()}|${uf.toUpperCase()}`;
+    this.db.prepare(`
+      INSERT OR REPLACE INTO cidades_geo (chave, municipio, uf, lat, lng, buscado_em)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(chave, municipio, uf, lat, lng, new Date().toISOString());
   }
 
   // ─── Utilitários ──────────────────────────────────────────────────────────
@@ -267,4 +382,35 @@ export class CacheService implements OnModuleInit {
     d.setDate(d.getDate() - n);
     return d;
   }
+}
+
+export interface OwnerListaRow {
+  owner_id: string;
+  nome: string;
+  tipo: number;
+  status: number;
+  documento: string | null;
+  synced_at?: string;
+}
+
+export interface OwnerGeoRow {
+  documento: string;
+  cep: string | null;
+  logradouro: string | null;
+  numero: string | null;
+  complemento: string | null;
+  bairro: string | null;
+  municipio: string | null;
+  uf: string | null;
+  fonte: string;
+  buscado_em?: string;
+}
+
+export interface CidadeGeoRow {
+  chave?: string;
+  municipio: string;
+  uf: string;
+  lat: number | null;
+  lng: number | null;
+  buscado_em?: string;
 }

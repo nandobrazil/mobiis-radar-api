@@ -6,9 +6,20 @@ import { AnthropicProvider } from './providers/anthropic.provider';
 import { GeminiProvider } from './providers/gemini.provider';
 import { GptProvider } from './providers/gpt.provider';
 
+export type PerfilUso =
+  | 'POWER_USER'
+  | 'MODERADO'
+  | 'AUTOMATIZADO'
+  | 'ESPORADICO'
+  | 'EM_DECLINIO'
+  | 'NOVO_ADOTANDO'
+  | 'INATIVO';
+
 export interface AnaliseCliente {
-  nivel_risco: 'ALTO' | 'MEDIO' | 'BAIXO';
+  nivel_risco: 'ALTO' | 'MEDIO' | 'BAIXO' | 'INDEFINIDO';
   score_ia: number;
+  perfil_uso: PerfilUso;
+  padrao_historico: string;
   resumo: string;
   motivos: string[];
   acao_recomendada: string;

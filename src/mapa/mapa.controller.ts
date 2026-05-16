@@ -1,5 +1,5 @@
-import { Controller, Get } from '@nestjs/common';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Controller, Get, Query } from '@nestjs/common';
+import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { MapaService } from './mapa.service';
 
 @ApiTags('Mapa')
@@ -10,10 +10,11 @@ export class MapaController {
   @Get('owners')
   @ApiOperation({
     summary: 'Lista owners para o mapa',
-    description: 'Retorna todos os owners com cidade, UF e país para exibição no mapa. Resultado cacheado em memória até meia-noite.',
+    description: 'Retorna owners com endereço e coordenadas enriquecidos via BrasilAPI + Nominatim. Lista de owners: cache SQLite de 7 dias. Geo por CNPJ: permanente (nunca re-busca). Use nocache=true para forçar re-fetch do SQL Server.',
   })
-  @ApiResponse({ status: 200, description: 'Lista de owners com localização.' })
-  getOwners() {
-    return this.mapaService.getOwners();
+  @ApiQuery({ name: 'nocache', required: false, type: Boolean, description: 'true = força re-fetch do SQL Server (geo permanece em cache)' })
+  @ApiResponse({ status: 200, description: 'Lista de owners com endereço e lat/lng.' })
+  getOwners(@Query('nocache') nocache?: string) {
+    return this.mapaService.getOwners(nocache === 'true');
   }
 }

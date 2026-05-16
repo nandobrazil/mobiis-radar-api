@@ -57,8 +57,14 @@ export class RelatorioService {
       }
     }
 
-    return [...comCache, ...novos]
-      .sort((a, b) => (b.analise?.score_ia ?? -1) - (a.analise?.score_ia ?? -1));
+    const NIVEL_ORDEM: Record<string, number> = { ALTO: 0, MEDIO: 1, BAIXO: 2, INDEFINIDO: 3 };
+    return [...comCache, ...novos].sort((a, b) => {
+      const na = NIVEL_ORDEM[a.analise?.nivel_risco ?? 'INDEFINIDO'];
+      const nb = NIVEL_ORDEM[b.analise?.nivel_risco ?? 'INDEFINIDO'];
+      if (na !== nb) return na - nb;
+      // Dentro do mesmo nível: score menor = mais urgente = aparece primeiro
+      return (a.analise?.score_ia ?? 50) - (b.analise?.score_ia ?? 50);
+    });
   }
 
   async getCliente(ownerId: string, nocache = false): Promise<ClienteComAnalise> {

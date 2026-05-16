@@ -18,10 +18,10 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
       password: this.config.get<string>('DB_PASS'),
       options: {
         encrypt: this.config.get('DB_ENCRYPT') === 'true',
-        trustServerCertificate: this.config.get('DB_TRUST_CERT') !== 'false',
+        trustServerCertificate: this.config.get('DB_TRUST_CERT') !== 'false', // Azure SQL: manter true até connection policy = Proxy
       },
       connectionTimeout: 300000,
-      requestTimeout: 60000,
+      requestTimeout: 600000,
       pool: { max: 10, min: 0, idleTimeoutMillis: 30000 },
     };
   }
