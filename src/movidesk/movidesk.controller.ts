@@ -1,7 +1,7 @@
-import { Controller, Get, Param, Query, ParseIntPipe, DefaultValuePipe } from '@nestjs/common';
+import { Controller, Get, Param, Query, ParseIntPipe, DefaultValuePipe, NotFoundException } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { MovideskService } from './movidesk.service';
-import { MovideskTicket, MovideskResumo, TicketsCliente } from './movidesk.types';
+import { MovideskTicket, MovideskResumo, TicketsCliente, IndicadoresMovidesk } from './movidesk.types';
 
 @ApiTags('Movidesk')
 @Controller('movidesk')
@@ -66,5 +66,19 @@ export class MovideskController {
   @ApiResponse({ status: 200, description: 'Dados completos do ticket.' })
   getTicket(@Param('id', ParseIntPipe) id: number): Promise<MovideskTicket> {
     return this.movidesk.getTicket(id);
+  }
+
+  @Get('indicadores/:ownerId')
+  @ApiOperation({
+    summary: 'Indicadores de suporte por owner',
+    description: 'Vincula tickets do Movidesk ao owner via e-mails dos usuários (Users.Email → Movidesk clients.email). Retorna score_suporte (0-100) e indicadores de risco de churn via suporte: tickets abertos, urgência alta, SLA e tendência de crescimento.',
+  })
+  @ApiParam({ name: 'ownerId', description: 'GUID do owner (ex: DB42A861-9DD3-442E-9861-B7F9AB244BF8)' })
+  @ApiResponse({ status: 200, description: 'Indicadores de suporte do owner.' })
+  @ApiResponse({ status: 404, description: 'Owner sem usuários ou sem tickets no Movidesk.' })
+  async getIndicadores(@Param('ownerId') ownerId: string): Promise<IndicadoresMovidesk> {
+    const result = await this.movidesk.getIndicadoresPorOwner(ownerId);
+    if (!result) throw new NotFoundException(`Nenhum ticket Movidesk encontrado para owner "${ownerId}"`);
+    return result;
   }
 }

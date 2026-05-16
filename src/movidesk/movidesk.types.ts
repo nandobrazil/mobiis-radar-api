@@ -56,3 +56,35 @@ export interface TicketsCliente {
   abertos: number;
   tickets: MovideskTicket[];
 }
+
+export interface IndicadoresMovidesk {
+  owner_id: string;
+  nome_cliente: string;
+  emails_vinculados: string[];
+
+  // Volume
+  total_tickets: number;
+  tickets_90d: number;
+  tickets_30d: number;
+
+  // Status
+  tickets_abertos: number;      // New + InAttendance
+  tickets_pendentes: number;    // Stopped
+  tickets_encerrados: number;   // Closed + Resolved + Canceled
+
+  // Severidade
+  tickets_alta_urgencia: number; // urgência >= 3 (Alta, Muito alta)
+
+  // SLA
+  tempo_medio_resolucao_horas: number | null;
+
+  // Tendência (30d vs ritmo anterior)
+  tendencia: 'crescendo' | 'estavel' | 'caindo';
+  tendencia_delta_pct: number;
+
+  // Categorias
+  por_categoria: Record<string, number>;
+
+  // Score de risco via suporte (0-100, maior = mais risco de churn)
+  score_suporte: number;
+}
