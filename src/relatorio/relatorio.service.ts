@@ -23,6 +23,7 @@ export interface StatusAnalise {
 export class RelatorioService {
   private readonly logger = new Logger(RelatorioService.name);
   private readonly allowNoCache: boolean;
+  private readonly cacheOnly: boolean;
   private analiseEmAndamento: Promise<ClienteComAnalise[]> | null = null;
   private statusAnalise: StatusAnalise = {
     processando: false,
@@ -41,6 +42,7 @@ export class RelatorioService {
     private config: ConfigService,
   ) {
     this.allowNoCache = this.config.get('ALLOW_NO_CACHE') === 'true';
+    this.cacheOnly = this.config.get('CACHE_ONLY') === 'true';
   }
 
   getStatus(): StatusAnalise {
@@ -85,6 +87,12 @@ export class RelatorioService {
     }
 
     this.logger.log(`Cache: ${comCache.length} hit(s), ${semCache.length} a analisar`);
+
+    if (this.cacheOnly && semCache.length > 0) {
+      this.logger.warn(`CACHE_ONLY=true — ignorando ${semCache.length} cliente(s) sem cache`);
+      const semAnalise = semCache.map(c => ({ cliente: c, analise: null, contexto: contextos.get(c.owner_id) ?? null, owner: buildOwnerLocalizacao(ownerMap.get(c.owner_id)), probabilidade_churn_60d: null }));
+      return [...comCache, ...semAnalise].sort((a, b) => (a.analise?.score_ia ?? 50) - (b.analise?.score_ia ?? 50));
+    }
 
     const novos: ClienteComAnalise[] = [];
     const CHUNK = 3;
@@ -169,6 +177,11 @@ export class RelatorioService {
     const ctx = this.cache.getContexto(ownerId);
     const hash = this.cache.hashCliente(cliente, ctx?.contexto);
     const owner = buildOwnerLocalizacao(this.cache.getOwnerInfoMap().get(ownerId));
+
+    if (this.cacheOnly) {
+      const analise = this.cache.getAnalise(cliente.owner_id, hash) ?? null;
+      return { cliente, analise, contexto: ctx ?? null, owner, probabilidade_churn_60d: calcularProbabilidadeChurn60d(analise, cliente) };
+    }
 
     const contextos = ctx ? new Map([[ownerId, ctx.contexto]]) : new Map<string, string>();
     const analises = await this.aiService.analisarLote([cliente], contextos);
@@ -292,6 +305,11 @@ export class RelatorioService {
       }
     }
 
+    if (this.cacheOnly) {
+      this.logger.warn('CACHE_ONLY=true — match-cnae sem cache disponível, retornando sem insights IA');
+      return { matches, insights: { total_clientes_similares: matches.length, ...stats, argumento_venda: '', diferenciais: [], modulos_recomendados: [], abordagem_sugerida: '', oportunidades: [], riscos_conhecidos: [] }, de_cache: false };
+    }
+
     const insights = await this.gerarInsightsCnaeIA(input, matches, stats);
     const result: MatchCnaeResult = { matches, insights, de_cache: false };
     this.cache.saveMatchCnaeCache(cacheKey, matches.length, result);
@@ -377,6 +395,10 @@ export class RelatorioService {
     if (!nocache) {
       const cached = this.cache.getInsightsCache(cacheKey);
       if (cached) return { ...cached.result, de_cache: true };
+    }
+
+    if (this.cacheOnly) {
+      throw new HttpException({ message: 'CACHE_ONLY=true — insights ainda não gerados. Desative CACHE_ONLY e execute novamente.' }, 503);
     }
 
     // Agregação por setor
@@ -499,6 +521,10 @@ export class RelatorioService {
     if (!nocache) {
       const cached = this.cache.getPlanoCache(ownerId, hash);
       if (cached) return { ...cached, de_cache: true };
+    }
+
+    if (this.cacheOnly) {
+      throw new HttpException({ message: `CACHE_ONLY=true — plano de ação ainda não gerado para "${ownerId}". Desative CACHE_ONLY e execute novamente.` }, 503);
     }
 
     const { metricas_derivadas } = calcularParametrosRaw(cliente);
