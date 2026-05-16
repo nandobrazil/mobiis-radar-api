@@ -18,15 +18,30 @@ export class AnthropicProvider implements IAiProvider {
 
   async analisarLote(clientes: ClienteRisco[], contextos?: Map<string, string>): Promise<Map<string, AnaliseCliente>> {
     this.logger.log(`Lote de ${clientes.length} clientes → ${this.modelo}`);
+    const prompt = buildChurnPromptLote(clientes, contextos);
 
-    const response = await this.client.messages.create({
-      model: this.modelo,
-      max_tokens: 8000,
-      messages: [{ role: 'user', content: buildChurnPromptLote(clientes, contextos) }],
-    });
-
-    const raw = (response.content[0] as any).text as string;
+    const raw = await this.chamarComRetry(prompt);
     this.logger.debug(`Raw Anthropic response:\n${raw}`);
     return parseRespostaLote(raw, this.nome);
+  }
+
+  private async chamarComRetry(prompt: string, tentativa = 1): Promise<string> {
+    try {
+      const response = await this.client.messages.create({
+        model: this.modelo,
+        max_tokens: 8000,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      return (response.content[0] as any).text as string;
+    } catch (e: any) {
+      const status = e?.status ?? e?.error?.status;
+      if (status === 429 && tentativa < 4) {
+        const delay = tentativa * 30000; // 30s, 60s, 90s
+        this.logger.warn(`429 rate limit — aguardando ${delay / 1000}s (tentativa ${tentativa}/3)`);
+        await new Promise(r => setTimeout(r, delay));
+        return this.chamarComRetry(prompt, tentativa + 1);
+      }
+      throw e;
+    }
   }
 }

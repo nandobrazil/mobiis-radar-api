@@ -11,8 +11,8 @@ import { ClienteComAnalise, DetalheCliente, EntidadeDetalhe, OrigemDetalhe, Tend
 @Injectable()
 export class RelatorioService {
   private readonly logger = new Logger(RelatorioService.name);
-
   private readonly allowNoCache: boolean;
+  private analiseEmAndamento: Promise<ClienteComAnalise[]> | null = null;
 
   constructor(
     private clientesService: ClientesService,
@@ -25,6 +25,22 @@ export class RelatorioService {
   }
 
   async getTodos(nocache = false): Promise<ClienteComAnalise[]> {
+    // Requisições simultâneas compartilham o mesmo processo em andamento
+    if (!nocache && this.analiseEmAndamento) {
+      this.logger.log('Análise já em andamento — aguardando resultado existente');
+      return this.analiseEmAndamento;
+    }
+
+    const promise = this.executarAnalise(nocache);
+    if (!nocache) this.analiseEmAndamento = promise;
+    try {
+      return await promise;
+    } finally {
+      if (this.analiseEmAndamento === promise) this.analiseEmAndamento = null;
+    }
+  }
+
+  private async executarAnalise(nocache = false): Promise<ClienteComAnalise[]> {
     const skipCache = nocache && this.allowNoCache;
     const clientes = await this.clientesService.getTodos(skipCache);
     this.logger.log(`Total de clientes: ${clientes.length} | skipCache=${skipCache}`);
@@ -48,9 +64,13 @@ export class RelatorioService {
     this.logger.log(`Cache: ${comCache.length} hit(s), ${semCache.length} a analisar`);
 
     const novos: ClienteComAnalise[] = [];
-    const CHUNK = 30;
+    // Chunk pequeno + delay para respeitar 10k output tokens/min do Haiku
+    const CHUNK = 10;
+    const DELAY_MS = 12000;
     for (let i = 0; i < semCache.length; i += CHUNK) {
+      if (i > 0) await sleep(DELAY_MS);
       const chunk = semCache.slice(i, i + CHUNK);
+      this.logger.log(`Analisando chunk ${Math.floor(i / CHUNK) + 1}/${Math.ceil(semCache.length / CHUNK)} (${chunk.length} clientes)`);
       const chunkContextos = new Map(
         chunk.flatMap(c => {
           const ctx = contextos.get(c.owner_id);
@@ -229,4 +249,8 @@ export class RelatorioService {
     }));
   }
 
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }

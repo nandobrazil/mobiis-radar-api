@@ -287,7 +287,8 @@ export class CacheService implements OnModuleInit {
       c.entidades_utilizadas,
       c.usuarios_ativos,
       c.acoes_automatizadas_30d,
-      contexto ?? '',
+      // contexto só entra no hash quando existe — garante compatibilidade com cache anterior
+      ...(contexto ? [contexto] : []),
     ].join('|');
   }
 
