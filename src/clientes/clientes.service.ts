@@ -31,7 +31,9 @@ export class ClientesService {
     private cache: CacheService,
   ) {}
 
-  async getTodos(): Promise<ClienteRisco[]> {
+  async getTodos(nocache = false): Promise<ClienteRisco[]> {
+    if (nocache) await this.cache.forceSync();
+
     const [historico, hoje] = await Promise.all([
       Promise.resolve(this.cache.getHistoricoTodos()),
       this.queryHoje(),
@@ -41,7 +43,9 @@ export class ClientesService {
     return [...merged.values()];
   }
 
-  async getByOwnerId(ownerId: string): Promise<ClienteRisco> {
+  async getByOwnerId(ownerId: string, nocache = false): Promise<ClienteRisco> {
+    if (nocache) await this.cache.forceSync();
+
     const [historico, hoje] = await Promise.all([
       Promise.resolve(this.cache.getHistoricoPorOwner(ownerId)),
       this.queryHojePorOwner(ownerId),

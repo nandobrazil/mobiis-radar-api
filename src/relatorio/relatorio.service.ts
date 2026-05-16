@@ -26,7 +26,7 @@ export class RelatorioService {
 
   async getTodos(nocache = false): Promise<ClienteComAnalise[]> {
     const skipCache = nocache && this.allowNoCache;
-    const clientes = await this.clientesService.getTodos();
+    const clientes = await this.clientesService.getTodos(skipCache);
     this.logger.log(`Total de clientes: ${clientes.length} | skipCache=${skipCache}`);
 
     const comCache: ClienteComAnalise[] = [];
@@ -63,7 +63,7 @@ export class RelatorioService {
 
   async getCliente(ownerId: string, nocache = false): Promise<ClienteComAnalise> {
     const skipCache = nocache && this.allowNoCache;
-    const cliente = await this.clientesService.getByOwnerId(ownerId);
+    const cliente = await this.clientesService.getByOwnerId(ownerId, skipCache);
     const hash = this.cache.hashCliente(cliente);
     const cached = !skipCache && this.cache.getAnalise(cliente.owner_id, hash);
     if (cached) return { cliente, analise: cached };

@@ -142,6 +142,12 @@ export class CacheService implements OnModuleInit {
     this.logger.log(`Cache: ${result.recordset.length} registros salvos para ${faltando.length} datas`);
   }
 
+  async forceSync(): Promise<void> {
+    this.db.prepare('DELETE FROM sync_log').run();
+    this.logger.log('forceSync: sync_log limpo — re-sincronizando 90 dias do SQL Server');
+    await this.syncDatasNovas();
+  }
+
   // ─── Leitura: agrega histórico do SQLite (até ontem) ──────────────────────
 
   getHistoricoTodos(): Map<string, HistoricoOwner> {
