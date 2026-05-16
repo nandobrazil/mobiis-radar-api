@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Post, Query } from '@nestjs/common';
 import { ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { RelatorioService } from './relatorio.service';
-import { ClienteComAnalise, DetalheCliente } from './relatorio.types';
+import { ClienteComAnalise, DetalheCliente, ParametrosAnalise } from './relatorio.types';
 
 @ApiTags('Relatorio')
 @Controller('relatorio')
@@ -74,6 +74,18 @@ export class RelatorioController {
   deleteContexto(@Param('ownerId') ownerId: string) {
     this.relatorioService.deleteContexto(ownerId);
     return { ok: true, owner_id: ownerId };
+  }
+
+  @Get('cliente/:ownerId/parametros')
+  @ApiOperation({
+    summary: 'Parâmetros utilizados pela IA para chegar nas conclusões',
+    description: 'Expõe as métricas brutas do SQL, as métricas derivadas calculadas antes do prompt, o breakdown fator-a-fator do score base, o que a IA ajustou vs o cálculo determinístico, e alertas sobre o que está errado ou pode melhorar. Usa o cache existente — não chama a IA novamente.',
+  })
+  @ApiParam({ name: 'ownerId', description: 'GUID do owner' })
+  @ApiResponse({ status: 200, description: 'Parâmetros completos da análise.' })
+  @ApiResponse({ status: 404, description: 'Owner não encontrado.' })
+  getParametros(@Param('ownerId') ownerId: string): Promise<ParametrosAnalise> {
+    return this.relatorioService.getParametros(ownerId);
   }
 
   @Get('cliente/:ownerId/detalhe')

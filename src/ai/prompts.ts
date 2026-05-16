@@ -1,4 +1,17 @@
 import { ClienteRisco } from '../clientes/clientes.types';
+import { AnaliseCliente } from './ai.service';
+
+export interface FatorScore {
+  fator: string;
+  delta: number;
+  descricao: string;
+}
+
+export interface Alerta {
+  tipo: 'ERRO' | 'ATENCAO' | 'MELHORIA';
+  parametro: string;
+  mensagem: string;
+}
 
 const CONTEXTO_PLATAFORMA = `
 - Core do produto: Cargas e Reservas — entregam o valor principal; queda aqui é o sinal mais crítico
@@ -9,66 +22,111 @@ const CONTEXTO_PLATAFORMA = `
 - Volume alto de ações com pct_core caindo = cliente migrando o core para outro sistema, mantendo apenas periférico
 - taxa_diaria_anterior é o baseline real do cliente — use-a para contextualizar qualquer ausência recente`.trim();
 
-// ─── Score determinístico (âncora para o LLM) ────────────────────────────────
-// O LLM recebe esse score e pode ajustar ±10 com base em padrões identificados.
-// Representa saúde: 0 = churn iminente, 100 = muito saudável.
-function calcularScoreSaude(c: ClienteRisco, taxaDiariaAnterior: number): number {
+// ─── Score determinístico com breakdown ──────────────────────────────────────
+function calcularScoreDetalhado(c: ClienteRisco, taxaDiariaAnterior: number): { score: number; breakdown: FatorScore[] } {
+  const breakdown: FatorScore[] = [];
   let score = 100;
 
   // Inatividade — penalidade proporcional ao baseline histórico do cliente
-  if (c.dias_sem_atividade > 0) {
-    // Se o cliente nunca foi muito ativo (baixo baseline), ausência pesa menos
-    const pesoInatividade = taxaDiariaAnterior < 0.1 ? 0.4 : taxaDiariaAnterior < 0.5 ? 0.7 : 1.0;
-    if (c.dias_sem_atividade > 60) score -= Math.round(65 * pesoInatividade);
-    else if (c.dias_sem_atividade > 30) score -= Math.round(45 * pesoInatividade);
-    else if (c.dias_sem_atividade > 15) score -= Math.round(20 * pesoInatividade);
-    else if (c.dias_sem_atividade > 7) score -= Math.round(8 * pesoInatividade);
+  const pesoInatividade = taxaDiariaAnterior < 0.1 ? 0.4 : taxaDiariaAnterior < 0.5 ? 0.7 : 1.0;
+  let deltaInatividade = 0;
+  let descrInatividade = 'Ativo recentemente — sem penalidade';
+  if (c.dias_sem_atividade > 60) {
+    deltaInatividade = -Math.round(65 * pesoInatividade);
+    descrInatividade = `${c.dias_sem_atividade}d sem atividade (> 60d), peso baseline ${pesoInatividade}`;
+  } else if (c.dias_sem_atividade > 30) {
+    deltaInatividade = -Math.round(45 * pesoInatividade);
+    descrInatividade = `${c.dias_sem_atividade}d sem atividade (> 30d), peso baseline ${pesoInatividade}`;
+  } else if (c.dias_sem_atividade > 15) {
+    deltaInatividade = -Math.round(20 * pesoInatividade);
+    descrInatividade = `${c.dias_sem_atividade}d sem atividade (> 15d), peso baseline ${pesoInatividade}`;
+  } else if (c.dias_sem_atividade > 7) {
+    deltaInatividade = -Math.round(8 * pesoInatividade);
+    descrInatividade = `${c.dias_sem_atividade}d sem atividade (> 7d), peso baseline ${pesoInatividade}`;
   }
+  score += deltaInatividade;
+  breakdown.push({ fator: 'Inatividade', delta: deltaInatividade, descricao: descrInatividade });
 
   // Volume recente vs baseline histórico
-  if (c.acoes_30d === 0 && c.acoes_90d > 0) score -= 30;
-  else if (c.acoes_30d < 5 && c.acoes_30d > 0) score -= 18;
-  else if (c.acoes_30d < 20) score -= 8;
+  let deltaVolume = 0;
+  let descrVolume = `${c.acoes_30d} ações em 30d — volume adequado`;
+  if (c.acoes_30d === 0 && c.acoes_90d > 0) { deltaVolume = -30; descrVolume = 'Zero ações nos últimos 30d apesar de histórico existente'; }
+  else if (c.acoes_30d < 5 && c.acoes_30d > 0) { deltaVolume = -18; descrVolume = `Apenas ${c.acoes_30d} ações em 30d — volume muito baixo`; }
+  else if (c.acoes_30d < 20) { deltaVolume = -8; descrVolume = `${c.acoes_30d} ações em 30d — abaixo de 20`; }
+  score += deltaVolume;
+  breakdown.push({ fator: 'Volume recente (30d)', delta: deltaVolume, descricao: descrVolume });
 
   // Tendência: 30d vs média mensal dos 90d
   const mediaMensal90d = c.acoes_90d / 3;
+  let deltaTendencia = 0;
+  let descrTendencia = 'Histórico insuficiente para calcular tendência';
   if (mediaMensal90d > 2) {
     const variacao = (c.acoes_30d - mediaMensal90d) / mediaMensal90d;
-    if (variacao < -0.8) score -= 28;
-    else if (variacao < -0.5) score -= 18;
-    else if (variacao < -0.2) score -= 8;
-    else if (variacao > 0.3) score += 5;
+    const varPct = Math.round(variacao * 100);
+    if (variacao < -0.8) { deltaTendencia = -28; descrTendencia = `Queda de ${-varPct}% vs baseline mensal — colapso de uso`; }
+    else if (variacao < -0.5) { deltaTendencia = -18; descrTendencia = `Queda de ${-varPct}% vs baseline mensal — queda significativa`; }
+    else if (variacao < -0.2) { deltaTendencia = -8; descrTendencia = `Queda de ${-varPct}% vs baseline mensal — leve declínio`; }
+    else if (variacao > 0.3) { deltaTendencia = 5; descrTendencia = `Crescimento de +${varPct}% vs baseline mensal`; }
+    else { descrTendencia = `Variação de ${varPct}% vs baseline — estável`; }
   }
+  score += deltaTendencia;
+  breakdown.push({ fator: 'Tendência de uso', delta: deltaTendencia, descricao: descrTendencia });
 
   // Proporção de ações negativas
+  let deltaNeg = 0;
+  let descrNeg = 'Nenhuma ação negativa registrada';
   if (c.acoes_30d > 0) {
     const pctNeg = c.acoes_negativas_30d / c.acoes_30d;
-    if (pctNeg > 0.3) score -= 22;
-    else if (pctNeg > 0.1) score -= 10;
-    else if (pctNeg > 0) score -= 4;
+    const pctNegPct = Math.round(pctNeg * 100);
+    if (pctNeg > 0.3) { deltaNeg = -22; descrNeg = `${pctNegPct}% de ações negativas — frustração crítica (> 30%)`; }
+    else if (pctNeg > 0.1) { deltaNeg = -10; descrNeg = `${pctNegPct}% de ações negativas — sinal de alerta (> 10%)`; }
+    else if (pctNeg > 0) { deltaNeg = -4; descrNeg = `${pctNegPct}% de ações negativas — impacto leve`; }
+    else { descrNeg = 'Nenhuma ação negativa — engajamento limpo'; }
   }
+  score += deltaNeg;
+  breakdown.push({ fator: 'Ações negativas', delta: deltaNeg, descricao: descrNeg });
 
   // Profundidade de equipe
-  if (c.usuarios_ativos === 0) score -= 12;
-  else if (c.usuarios_ativos === 1) score -= 2;
-  else if (c.usuarios_ativos >= 3) score += 3;
+  let deltaEquipe = 0;
+  let descrEquipe = `${c.usuarios_ativos} usuários ativos — adequado`;
+  if (c.usuarios_ativos === 0) { deltaEquipe = -12; descrEquipe = 'Nenhum usuário ativo — risco máximo de abandono'; }
+  else if (c.usuarios_ativos === 1) { deltaEquipe = -2; descrEquipe = 'Usuário único — risco de key person dependency'; }
+  else if (c.usuarios_ativos >= 3) { deltaEquipe = 3; descrEquipe = `${c.usuarios_ativos} usuários ativos — equipe saudável`; }
+  score += deltaEquipe;
+  breakdown.push({ fator: 'Profundidade de equipe', delta: deltaEquipe, descricao: descrEquipe });
 
   // Engajamento no core
+  let deltaCore = 0;
+  let descrCore = 'Sem ações no período — não aplicável';
   if (c.acoes_30d > 0) {
     const pctCore = c.acoes_core_30d / c.acoes_30d;
-    if (pctCore === 0) score -= 12;
-    else if (pctCore < 0.3) score -= 6;
-    else if (pctCore > 0.7) score += 5;
+    const pctCorePct = Math.round(pctCore * 100);
+    if (pctCore === 0) { deltaCore = -12; descrCore = 'Zero engajamento no core (Cargas/Reservas)'; }
+    else if (pctCore < 0.3) { deltaCore = -6; descrCore = `${pctCorePct}% no core — uso concentrado em módulos periféricos`; }
+    else if (pctCore > 0.7) { deltaCore = 5; descrCore = `${pctCorePct}% no core — excelente engajamento no produto principal`; }
+    else { descrCore = `${pctCorePct}% no core — engajamento moderado`; }
   }
+  score += deltaCore;
+  breakdown.push({ fator: 'Engajamento no core', delta: deltaCore, descricao: descrCore });
 
-  // Bônus por integração técnica (automação = custo de saída alto)
+  // Integração técnica (automação)
+  let deltaAuto = 0;
+  let descrAuto = 'Sem ações automatizadas — sem lock-in técnico';
   if (c.acoes_automatizadas_30d > 0) {
     const pctAuto = c.acoes_automatizadas_30d / Math.max(c.acoes_30d, 1);
-    if (pctAuto > 0.5) score += 8;
-    else if (pctAuto > 0.2) score += 4;
+    const pctAutoPct = Math.round(pctAuto * 100);
+    if (pctAuto > 0.5) { deltaAuto = 8; descrAuto = `${pctAutoPct}% automatizado — integração profunda, custo de saída alto`; }
+    else if (pctAuto > 0.2) { deltaAuto = 4; descrAuto = `${pctAutoPct}% automatizado — integração presente`; }
+    else { descrAuto = `${pctAutoPct}% automatizado — integração marginal`; }
   }
+  score += deltaAuto;
+  breakdown.push({ fator: 'Integração técnica (automação)', delta: deltaAuto, descricao: descrAuto });
 
-  return Math.max(0, Math.min(100, Math.round(score)));
+  return { score: Math.max(0, Math.min(100, Math.round(score))), breakdown };
+}
+
+function calcularScoreSaude(c: ClienteRisco, taxaDiariaAnterior: number): number {
+  return calcularScoreDetalhado(c, taxaDiariaAnterior).score;
 }
 
 // ─── Perfil sugerido deterministicamente (o LLM confirma ou corrige) ─────────
@@ -127,6 +185,155 @@ function calcularMetricas(c: ClienteRisco) {
     score_saude_base,
     perfil_sugerido,
   };
+}
+
+// ─── API pública: parâmetros expostos para o endpoint de transparência ────────
+export function calcularParametrosRaw(c: ClienteRisco) {
+  const acoes_periodo_anterior_60d = c.acoes_90d - c.acoes_30d;
+  const taxa_diaria_30d = parseFloat((c.acoes_30d / 30).toFixed(2));
+  const taxa_diaria_anterior = parseFloat((acoes_periodo_anterior_60d / 60).toFixed(2));
+  const mediaMensal90d = c.acoes_90d / 3;
+  const variacao_uso_pct = mediaMensal90d > 2
+    ? Math.max(-100, Math.min(500, Math.round(((c.acoes_30d - mediaMensal90d) / mediaMensal90d) * 100)))
+    : null;
+  const pct_negativos = c.acoes_30d > 0 ? Math.round((c.acoes_negativas_30d / c.acoes_30d) * 100) : 0;
+  const pct_core = c.acoes_30d > 0 ? Math.round((c.acoes_core_30d / c.acoes_30d) * 100) : 0;
+  const pct_automatizado = c.acoes_30d > 0 ? Math.round((c.acoes_automatizadas_30d / c.acoes_30d) * 100) : 0;
+  const { score: score_saude_base, breakdown: score_breakdown } = calcularScoreDetalhado(c, taxa_diaria_anterior);
+  const perfil_sugerido = sugerirPerfil(c, variacao_uso_pct, pct_automatizado, taxa_diaria_anterior);
+
+  return {
+    metricas_derivadas: {
+      acoes_periodo_anterior_60d,
+      taxa_diaria_30d,
+      taxa_diaria_anterior,
+      variacao_uso_pct,
+      pct_negativos,
+      pct_core,
+      pct_automatizado,
+      score_saude_base,
+      perfil_sugerido,
+    },
+    score_breakdown,
+  };
+}
+
+export function gerarAlertas(
+  c: ClienteRisco,
+  derivadas: ReturnType<typeof calcularParametrosRaw>['metricas_derivadas'],
+  analise: AnaliseCliente | null,
+  temContexto: boolean,
+): Alerta[] {
+  const alertas: Alerta[] = [];
+
+  // Divergência de perfil: IA corrigiu o cálculo determinístico
+  if (analise && analise.perfil_uso !== derivadas.perfil_sugerido) {
+    alertas.push({
+      tipo: 'ATENCAO',
+      parametro: 'perfil_uso',
+      mensagem: `IA classificou como "${analise.perfil_uso}" mas o cálculo determinístico sugeria "${derivadas.perfil_sugerido}". Revise se faz sentido para este cliente.`,
+    });
+  }
+
+  // Ajuste grande de score pela IA
+  if (analise) {
+    const ajuste = analise.score_ia - derivadas.score_saude_base;
+    if (Math.abs(ajuste) > 5) {
+      const sinal = ajuste > 0 ? '+' : '';
+      alertas.push({
+        tipo: 'ATENCAO',
+        parametro: 'score_ia',
+        mensagem: `IA ajustou o score em ${sinal}${ajuste} pontos (base determinística: ${derivadas.score_saude_base} → score IA: ${analise.score_ia}). Se o ajuste parecer incorreto, adicione um contexto CS para guiar a análise.`,
+      });
+    }
+  }
+
+  // Queda acentuada no uso
+  if (derivadas.variacao_uso_pct !== null && derivadas.variacao_uso_pct <= -50) {
+    alertas.push({
+      tipo: 'ERRO',
+      parametro: 'variacao_uso_pct',
+      mensagem: `Queda de ${-derivadas.variacao_uso_pct}% no uso vs baseline histórico — declínio acentuado. Investigar motivo imediatamente.`,
+    });
+  } else if (derivadas.variacao_uso_pct !== null && derivadas.variacao_uso_pct <= -25) {
+    alertas.push({
+      tipo: 'ATENCAO',
+      parametro: 'variacao_uso_pct',
+      mensagem: `Queda de ${-derivadas.variacao_uso_pct}% no uso vs baseline — monitorar tendência nas próximas semanas.`,
+    });
+  }
+
+  // Ações negativas elevadas
+  if (derivadas.pct_negativos > 20) {
+    alertas.push({
+      tipo: 'ERRO',
+      parametro: 'pct_negativos',
+      mensagem: `${derivadas.pct_negativos}% das ações nos últimos 30d são negativas (cancelamentos/exclusões). Contato urgente recomendado.`,
+    });
+  } else if (derivadas.pct_negativos > 10) {
+    alertas.push({
+      tipo: 'ATENCAO',
+      parametro: 'pct_negativos',
+      mensagem: `${derivadas.pct_negativos}% das ações são negativas — volume acima do esperado, monitorar evolução.`,
+    });
+  }
+
+  // Zero engajamento no core
+  if (c.acoes_30d > 0 && derivadas.pct_core === 0) {
+    alertas.push({
+      tipo: 'ERRO',
+      parametro: 'pct_core',
+      mensagem: 'Nenhuma ação no core do produto (Cargas/Reservas) nos últimos 30d. Cliente pode estar usando periférico sem real adoção — risco de migração para outro sistema.',
+    });
+  } else if (c.acoes_30d > 10 && derivadas.pct_core < 20) {
+    alertas.push({
+      tipo: 'ATENCAO',
+      parametro: 'pct_core',
+      mensagem: `Apenas ${derivadas.pct_core}% das ações no core — uso concentrado em módulos periféricos. Verificar se está migrando o core para outro sistema.`,
+    });
+  }
+
+  // Nenhum usuário ativo
+  if (c.usuarios_ativos === 0) {
+    alertas.push({
+      tipo: 'ERRO',
+      parametro: 'usuarios_ativos',
+      mensagem: 'Nenhum usuário ativo nos últimos 30d. Verificar se o cliente ainda tem acesso ativo e se há bloqueio de conta.',
+    });
+  } else if (c.usuarios_ativos === 1) {
+    alertas.push({
+      tipo: 'ATENCAO',
+      parametro: 'usuarios_ativos',
+      mensagem: 'Apenas 1 usuário ativo — key person dependency. Se esse usuário sair da empresa, o cliente some junto.',
+    });
+  }
+
+  // Cliente em risco sem contexto CS
+  if (!temContexto && analise && (analise.nivel_risco === 'ALTO' || analise.nivel_risco === 'MEDIO')) {
+    alertas.push({
+      tipo: 'ATENCAO',
+      parametro: 'contexto_cs',
+      mensagem: `Cliente com risco ${analise.nivel_risco} sem contexto CS registrado. Adicione observações via POST /relatorio/cliente/:id/contexto para melhorar a precisão da análise.`,
+    });
+  }
+
+  // Melhorias possíveis
+  if (derivadas.pct_automatizado === 0 && c.acoes_30d > 20) {
+    alertas.push({
+      tipo: 'MELHORIA',
+      parametro: 'pct_automatizado',
+      mensagem: 'Cliente sem integração técnica (API/automação). Apresentar recursos de automação pode aumentar o lock-in e reduzir risco de churn.',
+    });
+  }
+  if (c.usuarios_ativos <= 1 && c.acoes_30d > 5) {
+    alertas.push({
+      tipo: 'MELHORIA',
+      parametro: 'usuarios_ativos',
+      mensagem: 'Incentivar expansão de usuários na conta — mais usuários = maior stickiness e menor risco de abandono.',
+    });
+  }
+
+  return alertas;
 }
 
 function contextoCalendario(): string {

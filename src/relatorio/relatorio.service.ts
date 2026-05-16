@@ -6,7 +6,9 @@ import { AiService, AnaliseCliente } from '../ai/ai.service';
 import { CacheService } from '../cache/cache.service';
 import { DatabaseService } from '../database/database.service';
 import { ClienteRisco } from '../clientes/clientes.types';
-import { ClienteComAnalise, DetalheCliente, EntidadeDetalhe, OrigemDetalhe, TendenciaSemanal } from './relatorio.types';
+import { calcularParametrosRaw, gerarAlertas } from '../ai/prompts';
+import { OwnerLocalizacao } from '../mapa/mapa.types';
+import { ClienteComAnalise, DetalheCliente, EntidadeDetalhe, OrigemDetalhe, ParametrosAnalise, TendenciaSemanal } from './relatorio.types';
 
 @Injectable()
 export class RelatorioService {
@@ -45,6 +47,7 @@ export class RelatorioService {
     const clientes = await this.clientesService.getTodos(skipCache);
     this.logger.log(`Total de clientes: ${clientes.length} | skipCache=${skipCache}`);
 
+    const ownerMap = this.cache.getOwnerInfoMap();
     const contextos = this.cache.getAllContextos();
 
     const comCache: ClienteComAnalise[] = [];
@@ -55,7 +58,7 @@ export class RelatorioService {
       const hash = this.cache.hashCliente(c, ctx?.contexto);
       const cached = !skipCache && this.cache.getAnalise(c.owner_id, hash);
       if (cached) {
-        comCache.push({ cliente: c, analise: cached, contexto: ctx ?? null });
+        comCache.push({ cliente: c, analise: cached, contexto: ctx ?? null, owner: buildOwnerLocalizacao(ownerMap.get(c.owner_id)) });
       } else {
         semCache.push(c);
       }
@@ -83,7 +86,7 @@ export class RelatorioService {
         const hash = this.cache.hashCliente(c, ctx?.contexto);
         const analise = analises.get(c.owner_id) ?? null;
         if (analise) this.cache.saveAnalise(c.owner_id, hash, analise);
-        novos.push({ cliente: c, analise, contexto: ctx ?? null, erro: analise ? undefined : true });
+        novos.push({ cliente: c, analise, contexto: ctx ?? null, owner: buildOwnerLocalizacao(ownerMap.get(c.owner_id)), erro: analise ? undefined : true });
       }
     }
 
@@ -103,13 +106,14 @@ export class RelatorioService {
     const ctx = this.cache.getContexto(ownerId);
     const hash = this.cache.hashCliente(cliente, ctx?.contexto);
     const cached = !skipCache && this.cache.getAnalise(cliente.owner_id, hash);
-    if (cached) return { cliente, analise: cached, contexto: ctx ?? null };
+    const owner = buildOwnerLocalizacao(this.cache.getOwnerInfoMap().get(ownerId));
+    if (cached) return { cliente, analise: cached, contexto: ctx ?? null, owner };
 
     const contextos = ctx ? new Map([[ownerId, ctx.contexto]]) : new Map<string, string>();
     const analises = await this.aiService.analisarLote([cliente], contextos);
     const analise = analises.get(cliente.owner_id) ?? null;
     if (analise) this.cache.saveAnalise(cliente.owner_id, hash, analise);
-    return { cliente, analise, contexto: ctx ?? null, erro: analise ? undefined : true };
+    return { cliente, analise, contexto: ctx ?? null, owner, erro: analise ? undefined : true };
   }
 
   getContexto(ownerId: string) {
@@ -122,6 +126,35 @@ export class RelatorioService {
 
   deleteContexto(ownerId: string) {
     this.cache.deleteContexto(ownerId);
+  }
+
+  async getParametros(ownerId: string): Promise<ParametrosAnalise> {
+    const cliente = await this.clientesService.getByOwnerId(ownerId);
+    const ctx = this.cache.getContexto(ownerId);
+    const hash = this.cache.hashCliente(cliente, ctx?.contexto);
+    const analise = this.cache.getAnalise(cliente.owner_id, hash) ?? null;
+
+    const { metricas_derivadas, score_breakdown } = calcularParametrosRaw(cliente);
+    const alertas = gerarAlertas(cliente, metricas_derivadas, analise, !!ctx);
+
+    const analise_ia = analise
+      ? {
+          ...analise,
+          ajuste_ia: analise.score_ia - metricas_derivadas.score_saude_base,
+          perfil_confirmado: analise.perfil_uso === metricas_derivadas.perfil_sugerido,
+        }
+      : null;
+
+    return {
+      owner_id: ownerId,
+      nome_cliente: cliente.nome_cliente,
+      metricas_brutas: cliente,
+      metricas_derivadas,
+      score_breakdown,
+      analise_ia,
+      alertas,
+      contexto_cs: ctx ?? null,
+    };
   }
 
   async getDetalhe(ownerId: string): Promise<DetalheCliente> {
@@ -253,4 +286,37 @@ export class RelatorioService {
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function buildOwnerLocalizacao(
+  info: { lista: import('../cache/cache.service').OwnerListaRow; geo: import('../cache/cache.service').OwnerGeoRow | null } | undefined,
+): OwnerLocalizacao | null {
+  if (!info) return null;
+  const { lista: o, geo } = info;
+  return {
+    id: o.owner_id,
+    nome: o.nome,
+    tipo: o.tipo,
+    status: o.status,
+    documento: o.documento ?? null,
+    cep: geo?.cep ?? null,
+    logradouro: geo?.logradouro ?? null,
+    numero: geo?.numero ?? null,
+    complemento: geo?.complemento ?? null,
+    bairro: geo?.bairro ?? null,
+    municipio: geo?.municipio ?? null,
+    uf: geo?.uf ?? null,
+    lat: (geo as any)?.lat ?? null,
+    lng: (geo as any)?.lng ?? null,
+    razao_social: geo?.razao_social ?? null,
+    nome_fantasia: geo?.nome_fantasia ?? null,
+    cnae_fiscal: geo?.cnae_fiscal ?? null,
+    cnae_fiscal_descricao: geo?.cnae_fiscal_descricao ?? null,
+    cnaes_secundarios: geo?.cnaes_secundarios ? JSON.parse(geo.cnaes_secundarios) : null,
+    porte: geo?.porte ?? null,
+    natureza_juridica: geo?.natureza_juridica ?? null,
+    capital_social: geo?.capital_social ?? null,
+    data_inicio_atividade: geo?.data_inicio_atividade ?? null,
+    opcao_pelo_simples: geo?.opcao_pelo_simples ?? null,
+  };
 }

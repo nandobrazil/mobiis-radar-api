@@ -411,6 +411,16 @@ export class CacheService implements OnModuleInit {
     })();
   }
 
+  getOwnerInfoMap(): Map<string, { lista: OwnerListaRow; geo: OwnerGeoRow | null }> {
+    const lista = this.db.prepare('SELECT * FROM owners_lista').all() as OwnerListaRow[];
+    const geoAll = this.db.prepare("SELECT * FROM owners_geo WHERE fonte = 'brasilapi'").all() as OwnerGeoRow[];
+    const geoMap = new Map(geoAll.map(g => [g.documento, g]));
+    return new Map(lista.map(o => [
+      o.owner_id,
+      { lista: o, geo: o.documento ? (geoMap.get(o.documento) ?? null) : null },
+    ]));
+  }
+
   // ─── Geo por CNPJ (permanente) ────────────────────────────────────────────
 
   getOwnerGeo(documento: string): OwnerGeoRow | null {
