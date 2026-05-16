@@ -83,11 +83,9 @@ export class MapaService {
 
     if (novos.length > 0) {
       this.logger.log(`BrasilAPI: ${novos.length} CNPJs novos a buscar (${comCnpj.length - novos.length} já em cache)`);
-      const LOTE = 2;
-      for (let i = 0; i < novos.length; i += LOTE) {
-        const lote = novos.slice(i, i + LOTE);
-        await Promise.all(lote.map(o => this.garantirGeoOwner(o)));
-        if (i + LOTE < novos.length) await sleep(1500);
+      for (let i = 0; i < novos.length; i++) {
+        await this.garantirGeoOwner(novos[i]);
+        if (i < novos.length - 1) await sleep(2000);
       }
     } else {
       this.logger.log(`BrasilAPI: todos os ${comCnpj.length} CNPJs já em cache`);
@@ -137,14 +135,14 @@ export class MapaService {
 
   private async garantirGeoOwner(owner: OwnerListaRow): Promise<void> {
     const doc = limparCnpj(owner.documento!);
-    if (this.cache.getOwnerGeo(doc)) return; // já está em cache permanente
+    if (this.cache.getOwnerGeo(doc)) return;
     const geo = await this.buscarBrasilApi(doc);
-    this.cache.saveOwnerGeo(geo);
+    if (geo.fonte !== 'erro_transitorio') this.cache.saveOwnerGeo(geo);
   }
 
   // ─── BrasilAPI ────────────────────────────────────────────────────────────
 
-  private async buscarBrasilApi(cnpj: string): Promise<OwnerGeoRow> {
+  private async buscarBrasilApi(cnpj: string, tentativa = 1): Promise<OwnerGeoRow> {
     const vazio: OwnerGeoRow = {
       documento: cnpj,
       cep: null, logradouro: null, numero: null, complemento: null,
@@ -159,14 +157,21 @@ export class MapaService {
       });
 
       if (!res.ok) {
-        // 403/404 = CNPJ sem dados públicos na Receita Federal (esperado, salvo como nao_encontrado)
-        // 5xx/outros = erro real da API
-        if (res.status === 403 || res.status === 404) {
-          this.logger.log(`BrasilAPI ${cnpj}: HTTP ${res.status} — CNPJ sem dados públicos, ignorando`);
-        } else {
-          this.logger.warn(`BrasilAPI ${cnpj}: HTTP ${res.status} inesperado`);
+        if (res.status === 404) {
+          // 404 = CNPJ genuinamente não cadastrado — salva como nao_encontrado permanente
+          this.logger.log(`BrasilAPI ${cnpj}: não encontrado na Receita Federal`);
+          return vazio;
         }
-        return vazio;
+        if (res.status === 403 && tentativa < 4) {
+          // 403 = possível rate limit (BrasilAPI não usa 429) — retenta com backoff
+          const delay = tentativa * 5000;
+          this.logger.warn(`BrasilAPI ${cnpj}: 403 (tentativa ${tentativa}/3) — aguardando ${delay / 1000}s`);
+          await sleep(delay);
+          return this.buscarBrasilApi(cnpj, tentativa + 1);
+        }
+        // 403 após 3 tentativas ou outro status: não cacheia, tenta novamente na próxima execução
+        this.logger.warn(`BrasilAPI ${cnpj}: HTTP ${res.status} após ${tentativa} tentativa(s) — pulando sem cachear`);
+        return { ...vazio, fonte: 'erro_transitorio' };
       }
 
       const d = await res.json() as Record<string, any>;
