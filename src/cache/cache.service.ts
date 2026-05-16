@@ -473,6 +473,53 @@ export class CacheService implements OnModuleInit {
     `).run(chave, municipio, uf, lat, lng, new Date().toISOString());
   }
 
+  // ─── Export / Import de geo (para mover cache entre ambientes) ───────────
+
+  exportGeo(): { owners_geo: OwnerGeoRow[]; cidades_geo: CidadeGeoRow[] } {
+    const owners_geo = this.db.prepare(
+      "SELECT * FROM owners_geo WHERE fonte = 'brasilapi'"
+    ).all() as OwnerGeoRow[];
+    const cidades_geo = this.db.prepare('SELECT * FROM cidades_geo').all() as CidadeGeoRow[];
+    return { owners_geo, cidades_geo };
+  }
+
+  importGeo(data: { owners_geo: OwnerGeoRow[]; cidades_geo: CidadeGeoRow[] }): { owners: number; cidades: number } {
+    const insGeo = this.db.prepare(`
+      INSERT OR REPLACE INTO owners_geo
+        (documento, cep, logradouro, numero, complemento, bairro, municipio, uf,
+         razao_social, nome_fantasia, cnae_fiscal, cnae_fiscal_descricao, cnaes_secundarios,
+         porte, natureza_juridica, capital_social, data_inicio_atividade, opcao_pelo_simples,
+         fonte, buscado_em)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const insCidade = this.db.prepare(`
+      INSERT OR REPLACE INTO cidades_geo (chave, municipio, uf, lat, lng, buscado_em)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    this.db.transaction(() => {
+      for (const g of data.owners_geo) {
+        insGeo.run(
+          g.documento, g.cep, g.logradouro, g.numero,
+          g.complemento, g.bairro, g.municipio, g.uf,
+          g.razao_social ?? null, g.nome_fantasia ?? null,
+          g.cnae_fiscal ?? null, g.cnae_fiscal_descricao ?? null,
+          g.cnaes_secundarios ?? null, g.porte ?? null,
+          g.natureza_juridica ?? null, g.capital_social ?? null,
+          g.data_inicio_atividade ?? null,
+          g.opcao_pelo_simples != null ? (g.opcao_pelo_simples ? 1 : 0) : null,
+          g.fonte, (g as any).buscado_em ?? new Date().toISOString(),
+        );
+      }
+      for (const c of data.cidades_geo) {
+        const chave = `${c.municipio.toUpperCase()}|${c.uf.toUpperCase()}`;
+        insCidade.run(chave, c.municipio, c.uf, c.lat, c.lng, (c as any).buscado_em ?? new Date().toISOString());
+      }
+    })();
+
+    return { owners: data.owners_geo.length, cidades: data.cidades_geo.length };
+  }
+
   // ─── Utilitários ──────────────────────────────────────────────────────────
 
   private toDateStr(d: Date): string {

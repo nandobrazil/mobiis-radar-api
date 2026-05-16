@@ -70,6 +70,16 @@ export class MapaService {
     });
   }
 
+  exportGeo() {
+    return this.cache.exportGeo();
+  }
+
+  importGeo(data: any) {
+    const resultado = this.cache.importGeo(data);
+    this.logger.log(`importGeo: ${resultado.owners} CNPJs e ${resultado.cidades} cidades importados`);
+    return resultado;
+  }
+
   // ─── Enriquecimento geo ───────────────────────────────────────────────────
 
   private async enriquecerGeo(
