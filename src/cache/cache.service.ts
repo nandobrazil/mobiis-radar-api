@@ -457,7 +457,10 @@ export class CacheService implements OnModuleInit {
   }
 
   getOwnerInfoMap(): Map<string, { lista: OwnerListaRow; geo: (OwnerGeoRow & { lat: number | null; lng: number | null }) | null }> {
-    const lista = this.db.prepare('SELECT * FROM owners_lista').all() as OwnerListaRow[];
+    // Restringe aos owners com atividade nos últimos 90d (owners_cache) — mesmos 216 da análise de churn
+    const lista = this.db.prepare(
+      'SELECT ol.* FROM owners_lista ol INNER JOIN owners_cache oc ON oc.owner_id = ol.owner_id'
+    ).all() as OwnerListaRow[];
     const geoAll = this.db.prepare("SELECT * FROM owners_geo WHERE fonte = 'brasilapi'").all() as OwnerGeoRow[];
     const cidadeAll = this.db.prepare('SELECT * FROM cidades_geo').all() as CidadeGeoRow[];
     const geoMap = new Map(geoAll.map(g => [g.documento, g]));
