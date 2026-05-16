@@ -23,6 +23,7 @@ const QUERY_HOJE = `
     AND e.OwnerId IS NOT NULL
     AND o.LicenseType = 3
     AND o.Status = 1
+    AND o.Type = 3
   GROUP BY e.OwnerId, o.Name
 `;
 
@@ -108,6 +109,7 @@ export class ClientesService {
           AND e.OwnerId = @ownerId
           AND o.LicenseType = 3
           AND o.Status = 1
+          AND o.Type = 3
         GROUP BY e.OwnerId, o.Name
       `);
     return result.recordset[0] ?? null;

@@ -209,6 +209,7 @@ export class CacheService implements OnModuleInit {
           AND e.OwnerId IS NOT NULL
           AND o.LicenseType = 3
           AND o.Status = 1
+          AND o.Type = 3
         GROUP BY e.OwnerId, o.Name, CONVERT(VARCHAR(10), e.DhExecucao, 23)
       `);
 
