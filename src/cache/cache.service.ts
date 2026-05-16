@@ -30,6 +30,10 @@ export class CacheService implements OnModuleInit {
 
   async onModuleInit() {
     this.initSqlite();
+    if (this.config.get('CACHE_ONLY') === 'true') {
+      this.logger.warn('CACHE_ONLY=true — sync do SQL Server desativado. Dados servidos apenas do SQLite.');
+      return;
+    }
     await this.syncDatasNovas();
   }
 
@@ -258,6 +262,10 @@ export class CacheService implements OnModuleInit {
   }
 
   async forceSync(): Promise<void> {
+    if (this.config.get('CACHE_ONLY') === 'true') {
+      this.logger.warn('CACHE_ONLY=true — forceSync ignorado');
+      return;
+    }
     this.db.transaction(() => {
       this.db.prepare('DELETE FROM sync_log').run();
       this.db.prepare('DELETE FROM atividades_diarias').run();
