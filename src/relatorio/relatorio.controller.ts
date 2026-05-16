@@ -22,17 +22,26 @@ export class RelatorioController {
   @Get('cliente/:ownerId')
   @ApiOperation({
     summary: 'Análise individual de um cliente',
-    description: 'Retorna métricas de comportamento e análise de churn para o owner informado. Use ?nocache=true para forçar reprocessamento via IA.',
+    description: 'Retorna métricas e a análise em cache para o owner. Para forçar nova análise via IA, use POST /relatorio/cliente/:id/reprocessar.',
   })
   @ApiParam({ name: 'ownerId', description: 'GUID do owner (ex: DB42A861-9DD3-442E-9861-B7F9AB244BF8)' })
-  @ApiQuery({ name: 'nocache', required: false, description: 'true = ignora cache (requer ALLOW_NO_CACHE=true no servidor)' })
   @ApiResponse({ status: 200, description: 'Dados do cliente com análise de risco.' })
   @ApiResponse({ status: 404, description: 'Owner não encontrado.' })
-  getCliente(
-    @Param('ownerId') ownerId: string,
-    @Query('nocache') nocache?: string,
-  ): Promise<ClienteComAnalise> {
-    return this.relatorioService.getCliente(ownerId, nocache === 'true');
+  getCliente(@Param('ownerId') ownerId: string): Promise<ClienteComAnalise> {
+    return this.relatorioService.getCliente(ownerId);
+  }
+
+  @Post('cliente/:ownerId/reprocessar')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Reprocessa a análise de um cliente individualmente via IA',
+    description: 'Chama a IA com apenas este cliente (máxima acurácia, sem viés de comparação com outros). Atualiza o cache e retorna o resultado. Use este endpoint para o botão "Reprocessar" do frontend.',
+  })
+  @ApiParam({ name: 'ownerId', description: 'GUID do owner' })
+  @ApiResponse({ status: 200, description: 'Análise atualizada.' })
+  @ApiResponse({ status: 404, description: 'Owner não encontrado.' })
+  reprocessar(@Param('ownerId') ownerId: string): Promise<ClienteComAnalise> {
+    return this.relatorioService.reprocessarCliente(ownerId);
   }
 
   @Get('cliente/:ownerId/contexto')

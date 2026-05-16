@@ -67,9 +67,10 @@ export class RelatorioService {
     this.logger.log(`Cache: ${comCache.length} hit(s), ${semCache.length} a analisar`);
 
     const novos: ClienteComAnalise[] = [];
-    // Chunk pequeno + delay para respeitar 10k output tokens/min do Haiku
-    const CHUNK = 10;
-    const DELAY_MS = 12000;
+    // Chunk de 3: menos viés de comparação relativa entre clientes,
+    // ~50% mais barato que individual, delay menor por gerar menos tokens por chamada
+    const CHUNK = 3;
+    const DELAY_MS = 2000;
     for (let i = 0; i < semCache.length; i += CHUNK) {
       if (i > 0) await sleep(DELAY_MS);
       const chunk = semCache.slice(i, i + CHUNK);
@@ -100,14 +101,20 @@ export class RelatorioService {
     });
   }
 
-  async getCliente(ownerId: string, nocache = false): Promise<ClienteComAnalise> {
-    const skipCache = nocache && this.allowNoCache;
-    const cliente = await this.clientesService.getByOwnerId(ownerId, skipCache);
+  async getCliente(ownerId: string): Promise<ClienteComAnalise> {
+    const cliente = await this.clientesService.getByOwnerId(ownerId);
     const ctx = this.cache.getContexto(ownerId);
     const hash = this.cache.hashCliente(cliente, ctx?.contexto);
-    const cached = !skipCache && this.cache.getAnalise(cliente.owner_id, hash);
+    const analise = this.cache.getAnalise(cliente.owner_id, hash) ?? null;
     const owner = buildOwnerLocalizacao(this.cache.getOwnerInfoMap().get(ownerId));
-    if (cached) return { cliente, analise: cached, contexto: ctx ?? null, owner };
+    return { cliente, analise, contexto: ctx ?? null, owner };
+  }
+
+  async reprocessarCliente(ownerId: string): Promise<ClienteComAnalise> {
+    const cliente = await this.clientesService.getByOwnerId(ownerId);
+    const ctx = this.cache.getContexto(ownerId);
+    const hash = this.cache.hashCliente(cliente, ctx?.contexto);
+    const owner = buildOwnerLocalizacao(this.cache.getOwnerInfoMap().get(ownerId));
 
     const contextos = ctx ? new Map([[ownerId, ctx.contexto]]) : new Map<string, string>();
     const analises = await this.aiService.analisarLote([cliente], contextos);
