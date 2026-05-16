@@ -30,6 +30,7 @@ export class AnthropicProvider implements IAiProvider {
       const response = await this.client.messages.create({
         model: this.modelo,
         max_tokens: 8000,
+        temperature: 0,
         messages: [{ role: 'user', content: prompt }],
       });
       return (response.content[0] as any).text as string;

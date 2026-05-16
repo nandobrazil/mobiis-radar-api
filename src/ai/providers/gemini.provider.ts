@@ -25,7 +25,7 @@ export class GeminiProvider implements IAiProvider {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: buildChurnPromptLote(clientes, contextos) }] }],
-        generationConfig: { responseMimeType: 'application/json' },
+        generationConfig: { responseMimeType: 'application/json', temperature: 0 },
       }),
     });
 
