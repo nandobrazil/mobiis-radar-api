@@ -234,8 +234,12 @@ export class CacheService implements OnModuleInit {
   }
 
   async forceSync(): Promise<void> {
-    this.db.prepare('DELETE FROM sync_log').run();
-    this.logger.log('forceSync: sync_log limpo — re-sincronizando 90 dias do SQL Server');
+    this.db.transaction(() => {
+      this.db.prepare('DELETE FROM sync_log').run();
+      this.db.prepare('DELETE FROM atividades_diarias').run();
+      this.db.prepare('DELETE FROM owners_cache').run();
+    })();
+    this.logger.log('forceSync: cache limpo — re-sincronizando 90 dias do SQL Server');
     await this.syncDatasNovas();
   }
 
