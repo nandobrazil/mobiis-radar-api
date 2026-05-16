@@ -67,14 +67,26 @@ export class RelatorioService {
     this.logger.log(`Cache: ${comCache.length} hit(s), ${semCache.length} a analisar`);
 
     const novos: ClienteComAnalise[] = [];
-    // Chunk de 3: menos viés de comparação relativa entre clientes,
-    // ~50% mais barato que individual, delay menor por gerar menos tokens por chamada
     const CHUNK = 3;
     const DELAY_MS = 2000;
-    for (let i = 0; i < semCache.length; i += CHUNK) {
-      if (i > 0) await sleep(DELAY_MS);
-      const chunk = semCache.slice(i, i + CHUNK);
-      this.logger.log(`Analisando chunk ${Math.floor(i / CHUNK) + 1}/${Math.ceil(semCache.length / CHUNK)} (${chunk.length} clientes)`);
+
+    // Ordenar pelo score determinístico (pior → melhor) antes de distribuir
+    const semCacheOrdenado = [...semCache].sort((a, b) =>
+      calcularParametrosRaw(a).metricas_derivadas.score_saude_base -
+      calcularParametrosRaw(b).metricas_derivadas.score_saude_base
+    );
+
+    // Distribuição em stripe: item i → chunk (i % totalChunks)
+    // Garante que cada chunk tenha clientes do espectro inteiro (1 ruim, 1 médio, 1 bom)
+    // em vez de todos ruins no primeiro chunk e todos bons no último
+    const totalChunks = Math.ceil(semCacheOrdenado.length / CHUNK);
+    const chunks: ClienteRisco[][] = Array.from({ length: totalChunks }, () => []);
+    semCacheOrdenado.forEach((c, i) => chunks[i % totalChunks].push(c));
+
+    for (let ci = 0; ci < chunks.length; ci++) {
+      if (ci > 0) await sleep(DELAY_MS);
+      const chunk = chunks[ci];
+      this.logger.log(`Analisando chunk ${ci + 1}/${chunks.length} (${chunk.length} clientes)`);
       const chunkContextos = new Map(
         chunk.flatMap(c => {
           const ctx = contextos.get(c.owner_id);
@@ -93,11 +105,15 @@ export class RelatorioService {
 
     const NIVEL_ORDEM: Record<string, number> = { ALTO: 0, MEDIO: 1, BAIXO: 2, INDEFINIDO: 3 };
     return [...comCache, ...novos].sort((a, b) => {
-      const na = NIVEL_ORDEM[a.analise?.nivel_risco ?? 'INDEFINIDO'];
-      const nb = NIVEL_ORDEM[b.analise?.nivel_risco ?? 'INDEFINIDO'];
+      // Sem análise vai sempre ao final
+      if (!a.analise && !b.analise) return 0;
+      if (!a.analise) return 1;
+      if (!b.analise) return -1;
+      const na = NIVEL_ORDEM[a.analise.nivel_risco];
+      const nb = NIVEL_ORDEM[b.analise.nivel_risco];
       if (na !== nb) return na - nb;
-      // Dentro do mesmo nível: score menor = mais urgente = aparece primeiro
-      return (a.analise?.score_ia ?? 50) - (b.analise?.score_ia ?? 50);
+      // Mesmo nível: score menor = mais urgente = aparece primeiro
+      return a.analise.score_ia - b.analise.score_ia;
     });
   }
 
