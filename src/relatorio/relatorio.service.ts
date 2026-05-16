@@ -285,7 +285,7 @@ export class RelatorioService {
       if (cached) {
         if (matches.length <= cached.total_matches) {
           this.logger.log(`match-cnae: cache hit (${cached.total_matches} matches cached, ${matches.length} atuais)`);
-          return cached.result;
+          return { ...cached.result, de_cache: true };
         }
         this.logger.log(`match-cnae: cache invalidado — ${matches.length} matches > ${cached.total_matches} em cache`);
         this.cache.deleteMatchCnaeCache(cacheKey);
@@ -293,7 +293,7 @@ export class RelatorioService {
     }
 
     const insights = await this.gerarInsightsCnaeIA(input, matches, stats);
-    const result: MatchCnaeResult = { matches, insights };
+    const result: MatchCnaeResult = { matches, insights, de_cache: false };
     this.cache.saveMatchCnaeCache(cacheKey, matches.length, result);
     return result;
   }

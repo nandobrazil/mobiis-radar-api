@@ -111,6 +111,7 @@ export interface InsightsCnae {
 export interface MatchCnaeResult {
   matches: CnaeMatch[];
   insights: InsightsCnae;
+  de_cache?: boolean;
 }
 
 export interface MatchCnaeInput {
