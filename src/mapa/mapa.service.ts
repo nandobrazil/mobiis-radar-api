@@ -6,6 +6,7 @@ import { OwnerLocalizacao } from './mapa.types';
 const NOMINATIM_UA = 'mobiis-radar/1.0 (contato interno)';
 const BRASILAPI_BASE = 'https://brasilapi.com.br/api/cnpj/v1';
 const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org/search';
+const PHOTON_BASE = 'https://photon.komoot.io/api';
 
 @Injectable()
 export class MapaService {
@@ -114,11 +115,15 @@ export class MapaService {
     }
 
     if (cidadesNovas.size > 0) {
-      this.logger.log(`Nominatim: ${cidadesNovas.size} cidades novas a geocodificar`);
+      this.logger.log(`Geocodificando ${cidadesNovas.size} cidades novas`);
       const chaves = [...cidadesNovas];
       for (let i = 0; i < chaves.length; i++) {
         const [municipio, uf] = chaves[i].split('|');
-        const coords = await this.buscarNominatim(municipio, uf);
+        let coords = await this.buscarNominatim(municipio, uf);
+        if (!coords) {
+          await sleep(500);
+          coords = await this.buscarPhoton(municipio, uf);
+        }
         this.cache.saveCidadeGeo(municipio, uf, coords?.lat ?? null, coords?.lng ?? null);
         if (i < chaves.length - 1) await sleep(1100); // 1 req/s — não dorme após o último
       }
@@ -248,6 +253,40 @@ export class MapaService {
       return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
     } catch (e) {
       this.logger.warn(`Nominatim ${municipio}/${uf}: ${(e as Error).message}`);
+      return null;
+    }
+  }
+
+  private async buscarPhoton(municipio: string, uf: string): Promise<{ lat: number; lng: number } | null> {
+    try {
+      const params = new URLSearchParams({
+        q: `${municipio}, ${uf}, Brasil`,
+        limit: '1',
+        lang: 'pt',
+      });
+
+      const res = await fetch(`${PHOTON_BASE}?${params}`, {
+        headers: { 'User-Agent': NOMINATIM_UA, 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (!res.ok) {
+        this.logger.warn(`Photon ${municipio}/${uf}: HTTP ${res.status}`);
+        return null;
+      }
+
+      const data = await res.json() as { features: Array<{ geometry: { coordinates: [number, number] } }> };
+      if (!data.features?.length) {
+        this.logger.warn(`Photon ${municipio}/${uf}: sem resultado`);
+        return null;
+      }
+
+      // Photon retorna [lng, lat]
+      const [lng, lat] = data.features[0].geometry.coordinates;
+      this.logger.log(`Photon ${municipio}/${uf}: encontrado (${lat}, ${lng})`);
+      return { lat, lng };
+    } catch (e) {
+      this.logger.warn(`Photon ${municipio}/${uf}: ${(e as Error).message}`);
       return null;
     }
   }
