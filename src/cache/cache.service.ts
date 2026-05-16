@@ -416,14 +416,19 @@ export class CacheService implements OnModuleInit {
     })();
   }
 
-  getOwnerInfoMap(): Map<string, { lista: OwnerListaRow; geo: OwnerGeoRow | null }> {
+  getOwnerInfoMap(): Map<string, { lista: OwnerListaRow; geo: (OwnerGeoRow & { lat: number | null; lng: number | null }) | null }> {
     const lista = this.db.prepare('SELECT * FROM owners_lista').all() as OwnerListaRow[];
     const geoAll = this.db.prepare("SELECT * FROM owners_geo WHERE fonte = 'brasilapi'").all() as OwnerGeoRow[];
+    const cidadeAll = this.db.prepare('SELECT * FROM cidades_geo').all() as CidadeGeoRow[];
     const geoMap = new Map(geoAll.map(g => [g.documento, g]));
-    return new Map(lista.map(o => [
-      o.owner_id,
-      { lista: o, geo: o.documento ? (geoMap.get(o.documento) ?? null) : null },
-    ]));
+    const cidadeMap = new Map(cidadeAll.map(c => [`${c.municipio?.toUpperCase()}|${c.uf?.toUpperCase()}`, c]));
+    return new Map(lista.map(o => {
+      const geo = o.documento ? (geoMap.get(o.documento) ?? null) : null;
+      const cidade = geo?.municipio && geo?.uf
+        ? cidadeMap.get(`${geo.municipio.toUpperCase()}|${geo.uf.toUpperCase()}`) ?? null
+        : null;
+      return [o.owner_id, { lista: o, geo: geo ? { ...geo, lat: cidade?.lat ?? null, lng: cidade?.lng ?? null } : null }];
+    }));
   }
 
   // ─── Geo por CNPJ (permanente) ────────────────────────────────────────────

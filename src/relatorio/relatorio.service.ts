@@ -289,7 +289,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 function buildOwnerLocalizacao(
-  info: { lista: import('../cache/cache.service').OwnerListaRow; geo: import('../cache/cache.service').OwnerGeoRow | null } | undefined,
+  info: { lista: import('../cache/cache.service').OwnerListaRow; geo: (import('../cache/cache.service').OwnerGeoRow & { lat: number | null; lng: number | null }) | null } | undefined,
 ): OwnerLocalizacao | null {
   if (!info) return null;
   const { lista: o, geo } = info;
@@ -306,8 +306,8 @@ function buildOwnerLocalizacao(
     bairro: geo?.bairro ?? null,
     municipio: geo?.municipio ?? null,
     uf: geo?.uf ?? null,
-    lat: (geo as any)?.lat ?? null,
-    lng: (geo as any)?.lng ?? null,
+    lat: geo?.lat ?? null,
+    lng: geo?.lng ?? null,
     razao_social: geo?.razao_social ?? null,
     nome_fantasia: geo?.nome_fantasia ?? null,
     cnae_fiscal: geo?.cnae_fiscal ?? null,
