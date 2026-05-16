@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpException, NotFoundException, Param, Post, Query } from '@nestjs/common';
 import { ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { RelatorioService, StatusAnalise } from './relatorio.service';
-import { ClienteComAnalise, DetalheCliente, ParametrosAnalise } from './relatorio.types';
+import { ClienteComAnalise, DetalheCliente, MatchCnaeInput, MatchCnaeResult, ParametrosAnalise } from './relatorio.types';
 
 @ApiTags('Relatorio')
 @Controller('relatorio')
@@ -32,6 +32,18 @@ export class RelatorioController {
       throw new HttpException(status, 202);
     }
     return this.relatorioService.getTodos(nocache === 'true');
+  }
+
+  @Post('match-cnae')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Match de CNAE contra base de clientes para argumento de venda',
+    description: 'Recebe o payload completo da BrasilAPI (ou apenas cnae_fiscal + cnaes_secundarios) e retorna clientes na base com CNAEs idênticos (EXATO) ou do mesmo setor (DIVISAO), com os módulos que cada um usa e insights para argumentação de venda.',
+  })
+  @ApiBody({ schema: { properties: { cnae_fiscal: { type: 'number' }, cnae_fiscal_descricao: { type: 'string' }, cnaes_secundarios: { type: 'array' } } } })
+  @ApiResponse({ status: 200, description: 'Matches e insights.' })
+  matchCnae(@Body() body: MatchCnaeInput): Promise<MatchCnaeResult> {
+    return this.relatorioService.matchCnae(body);
   }
 
   @Get('cliente/:ownerId')

@@ -147,6 +147,7 @@ export class CacheService implements OnModuleInit {
       'ALTER TABLE owners_geo ADD COLUMN capital_social REAL',
       'ALTER TABLE owners_geo ADD COLUMN data_inicio_atividade TEXT',
       'ALTER TABLE owners_geo ADD COLUMN opcao_pelo_simples INTEGER',
+      'ALTER TABLE owners_lista ADD COLUMN modules TEXT',
     ]) {
       try { this.db.prepare(migration).run(); } catch { /* coluna já existe */ }
     }
@@ -369,6 +370,22 @@ export class CacheService implements OnModuleInit {
     };
   }
 
+  getAnaliseByOwner(ownerId: string): AnaliseCliente | null {
+    const row = this.db.prepare(
+      'SELECT * FROM analises_cache WHERE owner_id = ?'
+    ).get(ownerId) as any;
+    if (!row) return null;
+    return {
+      nivel_risco: row.nivel_risco,
+      score_ia: row.score_ia,
+      perfil_uso: row.perfil_uso ?? 'MODERADO',
+      padrao_historico: row.padrao_historico ?? '',
+      resumo: row.resumo,
+      motivos: JSON.parse(row.motivos),
+      acao_recomendada: row.acao_recomendada,
+    };
+  }
+
   saveAnalise(ownerId: string, hash: string, analise: AnaliseCliente): void {
     this.db.prepare(`
       INSERT OR REPLACE INTO analises_cache
@@ -408,11 +425,11 @@ export class CacheService implements OnModuleInit {
     const now = new Date().toISOString();
     const del = this.db.prepare('DELETE FROM owners_lista');
     const ins = this.db.prepare(
-      'INSERT OR REPLACE INTO owners_lista (owner_id, nome, tipo, status, documento, synced_at) VALUES (?, ?, ?, ?, ?, ?)'
+      'INSERT OR REPLACE INTO owners_lista (owner_id, nome, tipo, status, documento, modules, synced_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
     );
     this.db.transaction(() => {
       del.run();
-      for (const o of owners) ins.run(o.owner_id, o.nome, o.tipo, o.status, o.documento, now);
+      for (const o of owners) ins.run(o.owner_id, o.nome, o.tipo, o.status, o.documento, o.modules ?? null, now);
     })();
   }
 
@@ -559,6 +576,7 @@ export interface OwnerListaRow {
   tipo: number;
   status: number;
   documento: string | null;
+  modules?: string | null;
   synced_at?: string;
 }
 

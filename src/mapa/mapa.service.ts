@@ -8,6 +8,32 @@ const BRASILAPI_BASE = 'https://brasilapi.com.br/api/cnpj/v1';
 const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org/search';
 const PHOTON_BASE = 'https://photon.komoot.io/api';
 
+const MODULE_NAMES: Record<string, string> = {
+  '48F19D74-254C-42F6-9D74-A7ADCBBDAD75': 'Cargas',
+  'B8C66705-FBB8-4751-BA55-C6E718DD08E3': 'Frota',
+  '37898966-5155-4A7B-A803-53A49328A036': 'Oferecimento',
+  'C196AA7E-B034-4FFA-B27A-B1FF2292175E': 'OferecimentoRestrito',
+  'B32BDFE3-831D-4713-BF05-431D9936E683': 'FormacaoCargas',
+  'CE21F801-07C9-4E69-8E20-D82FFDCD369A': 'FormacaoImpressaoEtiquetas',
+  '5757A1F3-FCBB-4417-8A6D-AB212B587373': 'KpiCargas',
+  '01DC0461-3656-4276-9A6D-268499F7B52A': 'HubCargas',
+  '26E47DB1-7F6A-46D3-910F-14EC5BEECF48': 'PersonalizacaoKanbanCargas',
+  'D9F0AB03-49DC-47D4-833F-ECBA153B71C2': 'HubIntegracao',
+  '63CEEC2B-8E89-400A-98E1-3B725DA583D9': 'Auditoria',
+  '5FEF627D-FFE7-4769-BC57-B8C880578AA0': 'PortalAcompanhamento',
+  'BCCBA80C-D6E7-4AA8-830B-28DBBBEA3317': 'Relatorios',
+  '086127D0-7205-4303-A95B-09C0792739A3': 'PortalAgendamentoDoca',
+  '5CEBBC5E-6844-4309-A9B2-5BBA359C264D': 'CrossDocking',
+  '3E749E4F-F294-4C64-8A11-35322BD50E4F': 'AutomacaoAlertas',
+  '8812C8A7-0935-432E-A475-BAA390116AF9': 'CargasRestrito',
+  '58559C1C-B774-417A-BC8F-224F9144BDDD': 'Checklist',
+  'F912F29B-D6ED-42E0-818D-BB8F5182FD9E': 'Dashboards',
+  'AF85F73C-C4BE-44A2-AA98-AA6A794DE7E0': 'Painel',
+  'E9C52F84-2C85-4C5F-8C90-F0255C5D9F61': 'Acordos',
+  '640BA6E4-E79A-4B2C-ACF7-A7F18483E656': 'MIA',
+  '881F3C1C-6CE8-4FBD-8144-F5D41AECBEE3': 'ValidacaoComprovantes',
+};
+
 @Injectable()
 export class MapaService {
   private readonly logger = new Logger(MapaService.name);
@@ -296,17 +322,28 @@ export class MapaService {
   private async fetchOwnersFromSql(): Promise<OwnerListaRow[]> {
     const result = await this.db.connection.request().query(`
       SELECT
-        Id          AS owner_id,
-        Name        AS nome,
-        Type        AS tipo,
-        Status      AS status,
-        OwnerDocumentoNumero AS documento
-      FROM Owners WITH (NOLOCK)
-      WHERE Status = 1
-        AND Type IN (1, 3)
-        AND LicenseType = 3
+        o.Id                     AS owner_id,
+        o.Name                   AS nome,
+        o.Type                   AS tipo,
+        o.Status                 AS status,
+        o.OwnerDocumentoNumero   AS documento,
+        STRING_AGG(CAST(ol.ModuleId AS VARCHAR(50)), ',') AS modules
+      FROM Owners o WITH (NOLOCK)
+      LEFT JOIN OwnerLicense ol WITH (NOLOCK) ON ol.OwnerId = o.Id
+      WHERE o.Status = 1
+        AND o.Type IN (1, 3)
+        AND o.LicenseType = 3
+      GROUP BY o.Id, o.Name, o.Type, o.Status, o.OwnerDocumentoNumero
     `);
-    return result.recordset;
+    return result.recordset.map(r => ({
+      ...r,
+      modules: r.modules
+        ? r.modules.split(',')
+            .map((id: string) => MODULE_NAMES[id.trim().toUpperCase()] ?? null)
+            .filter(Boolean)
+            .join(',')
+        : null,
+    }));
   }
 }
 

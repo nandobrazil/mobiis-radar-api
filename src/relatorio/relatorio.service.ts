@@ -8,7 +8,7 @@ import { DatabaseService } from '../database/database.service';
 import { ClienteRisco } from '../clientes/clientes.types';
 import { calcularParametrosRaw, gerarAlertas } from '../ai/prompts';
 import { OwnerLocalizacao } from '../mapa/mapa.types';
-import { ClienteComAnalise, DetalheCliente, EntidadeDetalhe, OrigemDetalhe, ParametrosAnalise, TendenciaSemanal } from './relatorio.types';
+import { ClienteComAnalise, DetalheCliente, EntidadeDetalhe, MatchCnaeInput, MatchCnaeResult, OrigemDetalhe, ParametrosAnalise, TendenciaSemanal } from './relatorio.types';
 
 export interface StatusAnalise {
   processando: boolean;
@@ -218,6 +218,64 @@ export class RelatorioService {
     };
   }
 
+  async matchCnae(input: MatchCnaeInput): Promise<MatchCnaeResult> {
+    const allInputCnaes = new Set<number>([input.cnae_fiscal]);
+    const inputDivisoes = new Set<string>([String(input.cnae_fiscal).substring(0, 2)]);
+
+    for (const c of input.cnaes_secundarios ?? []) {
+      allInputCnaes.add(c.codigo);
+      inputDivisoes.add(String(c.codigo).substring(0, 2));
+    }
+
+    const ownerInfoMap = this.cache.getOwnerInfoMap();
+    const matches: import('./relatorio.types').CnaeMatch[] = [];
+
+    for (const [owner_id, info] of ownerInfoMap) {
+      const { lista, geo } = info;
+      if (!geo?.cnae_fiscal) continue;
+
+      const ownerCnaes: { codigo: number; descricao: string }[] = [
+        { codigo: geo.cnae_fiscal, descricao: geo.cnae_fiscal_descricao ?? '' },
+      ];
+      if (geo.cnaes_secundarios) {
+        try { ownerCnaes.push(...JSON.parse(geo.cnaes_secundarios)); } catch {}
+      }
+
+      const cnaesEmComum = ownerCnaes.filter(c => allInputCnaes.has(c.codigo));
+      const porDivisao = ownerCnaes.filter(c =>
+        inputDivisoes.has(String(c.codigo).substring(0, 2)) && !allInputCnaes.has(c.codigo)
+      );
+
+      const similaridade = cnaesEmComum.length > 0 ? 'EXATO'
+        : porDivisao.length > 0 ? 'DIVISAO'
+        : null;
+      if (!similaridade) continue;
+
+      matches.push({
+        owner_id,
+        nome: lista.nome,
+        documento: lista.documento ?? null,
+        municipio: geo.municipio ?? null,
+        uf: geo.uf ?? null,
+        lat: geo.lat ?? null,
+        lng: geo.lng ?? null,
+        modulos: lista.modules ? lista.modules.split(',').filter(Boolean) : [],
+        cnae_fiscal: geo.cnae_fiscal,
+        cnae_fiscal_descricao: geo.cnae_fiscal_descricao ?? null,
+        similaridade,
+        cnaes_em_comum: cnaesEmComum.length > 0 ? cnaesEmComum : porDivisao,
+        analise: this.cache.getAnaliseByOwner(owner_id),
+      });
+    }
+
+    matches.sort((a, b) => {
+      if (a.similaridade !== b.similaridade) return a.similaridade === 'EXATO' ? -1 : 1;
+      return b.cnaes_em_comum.length - a.cnaes_em_comum.length;
+    });
+
+    return { matches, insights: gerarInsightsCnae(matches, input) };
+  }
+
   async getDetalhe(ownerId: string): Promise<DetalheCliente> {
     const [nomeCliente, entidades, origens, tendencia] = await Promise.all([
       this.queryOwnerName(ownerId),
@@ -347,6 +405,50 @@ export class RelatorioService {
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function gerarInsightsCnae(
+  matches: import('./relatorio.types').CnaeMatch[],
+  input: import('./relatorio.types').MatchCnaeInput,
+): import('./relatorio.types').InsightsCnae {
+  const total = matches.length;
+
+  const moduloCount = new Map<string, number>();
+  for (const m of matches) {
+    for (const mod of m.modulos) {
+      moduloCount.set(mod, (moduloCount.get(mod) ?? 0) + 1);
+    }
+  }
+  const modulos_mais_usados = [...moduloCount.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([modulo, count]) => ({ modulo, count, percentual: total > 0 ? Math.round((count / total) * 100) : 0 }));
+
+  const ufCount = new Map<string, number>();
+  for (const m of matches) {
+    if (m.uf) ufCount.set(m.uf, (ufCount.get(m.uf) ?? 0) + 1);
+  }
+  const uf_com_mais_clientes = [...ufCount.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([uf, count]) => ({ uf, count }));
+
+  const segmento = input.cnae_fiscal_descricao ?? `CNAE ${input.cnae_fiscal}`;
+  let argumento: string;
+  if (total === 0) {
+    argumento = `Nenhum cliente ativo na base com CNAE similar ao segmento de ${segmento}.`;
+  } else {
+    const topModulos = modulos_mais_usados.slice(0, 3).map(m => m.modulo);
+    const topUfs = uf_com_mais_clientes.slice(0, 2).map(u => u.uf);
+    const exatos = matches.filter(m => m.similaridade === 'EXATO').length;
+    argumento = `Temos ${total} cliente${total > 1 ? 's' : ''} com perfil similar`;
+    if (exatos > 0) argumento += ` (${exatos} com CNAE idêntico)`;
+    argumento += ` no segmento de ${segmento}.`;
+    if (topModulos.length) argumento += ` Os módulos mais adotados nesse segmento são: ${topModulos.join(', ')}.`;
+    if (topUfs.length) argumento += ` Maior presença em ${topUfs.join(' e ')}.`;
+    if (total >= 5) argumento += ` Nossa experiência consolidada nesse setor é um diferencial de adoção.`;
+  }
+
+  return { total_clientes_similares: total, modulos_mais_usados, uf_com_mais_clientes, argumento_venda: argumento };
 }
 
 function buildOwnerLocalizacao(

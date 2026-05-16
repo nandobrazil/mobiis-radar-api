@@ -79,3 +79,38 @@ export interface ParametrosAnalise {
 }
 
 export { FatorScore, Alerta };
+
+export interface CnaeMatch {
+  owner_id: string;
+  nome: string;
+  documento: string | null;
+  municipio: string | null;
+  uf: string | null;
+  lat: number | null;
+  lng: number | null;
+  modulos: string[];
+  cnae_fiscal: number | null;
+  cnae_fiscal_descricao: string | null;
+  similaridade: 'EXATO' | 'DIVISAO';
+  cnaes_em_comum: { codigo: number; descricao: string }[];
+  analise: AnaliseCliente | null;
+}
+
+export interface InsightsCnae {
+  total_clientes_similares: number;
+  modulos_mais_usados: { modulo: string; count: number; percentual: number }[];
+  uf_com_mais_clientes: { uf: string; count: number }[];
+  argumento_venda: string;
+}
+
+export interface MatchCnaeResult {
+  matches: CnaeMatch[];
+  insights: InsightsCnae;
+}
+
+export interface MatchCnaeInput {
+  cnae_fiscal: number;
+  cnae_fiscal_descricao?: string;
+  cnaes_secundarios?: { codigo: number; descricao: string }[];
+  [key: string]: any; // aceita payload completo da BrasilAPI
+}
