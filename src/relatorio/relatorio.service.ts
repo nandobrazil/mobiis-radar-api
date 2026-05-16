@@ -86,12 +86,24 @@ export class RelatorioService {
       }
     }
 
-    this.logger.log(`Cache: ${comCache.length} hit(s), ${semCache.length} a analisar`);
+    this.logger.log(`Cache: ${comCache.length} hit(s), ${semCache.length} sem cache`);
 
-    if (this.cacheOnly && semCache.length > 0) {
-      this.logger.warn(`CACHE_ONLY=true — ignorando ${semCache.length} cliente(s) sem cache`);
+    // Sem skipCache explícito, nunca chamar IA automaticamente
+    if (!skipCache) {
+      if (semCache.length > 0) {
+        this.logger.log(`${semCache.length} cliente(s) sem cache — retornando sem análise (use nocache=true para reprocessar)`);
+      }
       const semAnalise = semCache.map(c => ({ cliente: c, analise: null, contexto: contextos.get(c.owner_id) ?? null, owner: buildOwnerLocalizacao(ownerMap.get(c.owner_id)), probabilidade_churn_60d: null }));
-      return [...comCache, ...semAnalise].sort((a, b) => (a.analise?.score_ia ?? 50) - (b.analise?.score_ia ?? 50));
+      const NIVEL_ORDEM: Record<string, number> = { ALTO: 0, MEDIO: 1, BAIXO: 2, INDEFINIDO: 3 };
+      return [...comCache, ...semAnalise].sort((a, b) => {
+        if (!a.analise && !b.analise) return 0;
+        if (!a.analise) return 1;
+        if (!b.analise) return -1;
+        const na = NIVEL_ORDEM[a.analise.nivel_risco];
+        const nb = NIVEL_ORDEM[b.analise.nivel_risco];
+        if (na !== nb) return na - nb;
+        return a.analise.score_ia - b.analise.score_ia;
+      });
     }
 
     const novos: ClienteComAnalise[] = [];
@@ -149,16 +161,12 @@ export class RelatorioService {
       };
     }
 
-    const NIVEL_ORDEM: Record<string, number> = { ALTO: 0, MEDIO: 1, BAIXO: 2, INDEFINIDO: 3 };
+    const NIVEL: Record<string, number> = { ALTO: 0, MEDIO: 1, BAIXO: 2, INDEFINIDO: 3 };
     return [...comCache, ...novos].sort((a, b) => {
-      // Sem análise vai sempre ao final
       if (!a.analise && !b.analise) return 0;
       if (!a.analise) return 1;
       if (!b.analise) return -1;
-      const na = NIVEL_ORDEM[a.analise.nivel_risco];
-      const nb = NIVEL_ORDEM[b.analise.nivel_risco];
-      if (na !== nb) return na - nb;
-      // Mesmo nível: score menor = mais urgente = aparece primeiro
+      if (NIVEL[a.analise.nivel_risco] !== NIVEL[b.analise.nivel_risco]) return NIVEL[a.analise.nivel_risco] - NIVEL[b.analise.nivel_risco];
       return a.analise.score_ia - b.analise.score_ia;
     });
   }
