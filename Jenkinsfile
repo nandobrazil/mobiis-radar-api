@@ -48,6 +48,7 @@ pipeline {
           string(credentialsId: 'DB_NAME',         variable: 'DB_NAME'),
           string(credentialsId: 'DB_USER',         variable: 'DB_USER'),
           string(credentialsId: 'DB_PASS',         variable: 'DB_PASS'),
+          string(credentialsId: 'DB_ENCRYPT',      variable: 'DB_ENCRYPT'),
           string(credentialsId: 'AI_PROVIDER',      variable: 'AI_PROVIDER'),
           string(credentialsId: 'ANTHROPIC_TOKEN',  variable: 'ANTHROPIC_TOKEN'),
           string(credentialsId: 'ANTHROPIC_MODELO', variable: 'ANTHROPIC_MODELO'),
@@ -69,6 +70,7 @@ pipeline {
               -e DB_NAME=\${DB_NAME} \
               -e DB_USER=\${DB_USER} \
               -e DB_PASS=\${DB_PASS} \
+              -e DB_ENCRYPT=\${DB_ENCRYPT} \
               -e AI_PROVIDER=\${AI_PROVIDER} \
               -e ANTHROPIC_TOKEN=\${ANTHROPIC_TOKEN} \
               -e ANTHROPIC_MODELO=\${ANTHROPIC_MODELO} \
