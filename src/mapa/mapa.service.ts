@@ -61,26 +61,26 @@ export class MapaService {
   ): Promise<Map<string, OwnerGeoRow & { lat: number | null; lng: number | null }>> {
     const result = new Map<string, OwnerGeoRow & { lat: number | null; lng: number | null }>();
 
-    // Fase 1: BrasilAPI por CNPJ — lote de 5 paralelos
-    const semGeo = owners.filter(o => o.documento && limparCnpj(o.documento).length === 14);
-    const totalNovos = semGeo.filter(o => !this.cache.getOwnerGeo(limparCnpj(o.documento!))).length;
-    if (totalNovos > 0) {
-      this.logger.log(`BrasilAPI: ${totalNovos} CNPJs novos a buscar`);
+    // Fase 1: BrasilAPI por CNPJ — apenas CNPJs ainda não cacheados
+    const comCnpj = owners.filter(o => o.documento && limparCnpj(o.documento).length === 14);
+    const novos = comCnpj.filter(o => !this.cache.getOwnerGeo(limparCnpj(o.documento!)));
+
+    if (novos.length > 0) {
+      this.logger.log(`BrasilAPI: ${novos.length} CNPJs novos a buscar (${comCnpj.length - novos.length} já em cache)`);
+      const LOTE = 2;
+      for (let i = 0; i < novos.length; i += LOTE) {
+        const lote = novos.slice(i, i + LOTE);
+        await Promise.all(lote.map(o => this.garantirGeoOwner(o)));
+        if (i + LOTE < novos.length) await sleep(1500);
+      }
+    } else {
+      this.logger.log(`BrasilAPI: todos os ${comCnpj.length} CNPJs já em cache`);
     }
 
-    const LOTE = 2;
-    for (let i = 0; i < semGeo.length; i += LOTE) {
-      const lote = semGeo.slice(i, i + LOTE);
-      await Promise.all(lote.map(o => this.garantirGeoOwner(o)));
-      if (i + LOTE < semGeo.length) await sleep(1500);
-    }
-
-    // Fase 2: Nominatim por cidade+UF — sequencial (1 req/seg)
+    // Fase 2: Nominatim por cidade+UF — apenas cidades ainda não cacheadas
     const cidadesNovas = new Set<string>();
-    for (const o of owners) {
-      const doc = limparCnpj(o.documento ?? '');
-      if (doc.length !== 14) continue;
-      const geo = this.cache.getOwnerGeo(doc);
+    for (const o of comCnpj) {
+      const geo = this.cache.getOwnerGeo(limparCnpj(o.documento!));
       if (geo?.municipio && geo.uf) {
         const chave = `${geo.municipio.toUpperCase()}|${geo.uf.toUpperCase()}`;
         if (!this.cache.getCidadeGeo(geo.municipio, geo.uf)) {
@@ -91,11 +91,12 @@ export class MapaService {
 
     if (cidadesNovas.size > 0) {
       this.logger.log(`Nominatim: ${cidadesNovas.size} cidades novas a geocodificar`);
-      for (const chave of cidadesNovas) {
-        const [municipio, uf] = chave.split('|');
+      const chaves = [...cidadesNovas];
+      for (let i = 0; i < chaves.length; i++) {
+        const [municipio, uf] = chaves[i].split('|');
         const coords = await this.buscarNominatim(municipio, uf);
         this.cache.saveCidadeGeo(municipio, uf, coords?.lat ?? null, coords?.lng ?? null);
-        await sleep(1100); // Respeita limite de 1 req/s do Nominatim
+        if (i < chaves.length - 1) await sleep(1100); // 1 req/s — não dorme após o último
       }
     }
 
