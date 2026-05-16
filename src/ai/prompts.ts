@@ -336,6 +336,106 @@ export function gerarAlertas(
   return alertas;
 }
 
+// ─── Prompt match-cnae (argumento de venda via IA) ───────────────────────────
+
+export interface InsightsCnaeIA {
+  argumento_venda: string;
+  diferenciais: string[];
+  modulos_recomendados: string[];
+  abordagem_sugerida: string;
+  oportunidades: string[];
+  riscos_conhecidos: string[];
+}
+
+export function buildMatchCnaePrompt(
+  input: {
+    cnae_fiscal: number;
+    cnae_fiscal_descricao?: string;
+    cnaes_secundarios?: { codigo: number; descricao: string }[];
+  },
+  matches: Array<{
+    nome: string;
+    uf: string | null;
+    municipio: string | null;
+    modulos: string[];
+    similaridade: 'EXATO' | 'DIVISAO';
+    cnaes_em_comum: { codigo: number; descricao: string }[];
+    analise: { nivel_risco: string; score_ia: number; perfil_uso: string; resumo: string } | null;
+  }>,
+  stats: {
+    modulos_mais_usados: { modulo: string; count: number; percentual: number }[];
+    uf_com_mais_clientes: { uf: string; count: number }[];
+  },
+): string {
+  const segmento = input.cnae_fiscal_descricao ?? `CNAE ${input.cnae_fiscal}`;
+  const cnaesSec = (input.cnaes_secundarios ?? []).map(c => `${c.codigo} — ${c.descricao}`).join('; ');
+
+  const exatos = matches.filter(m => m.similaridade === 'EXATO');
+  const divisao = matches.filter(m => m.similaridade === 'DIVISAO');
+
+  const formatarMatch = (m: (typeof matches)[0]) => {
+    const modulos = m.modulos.length ? m.modulos.join(', ') : 'sem módulos identificados';
+    const saude = m.analise ? ` | saúde: ${m.analise.score_ia}/100 (${m.analise.nivel_risco}) | perfil: ${m.analise.perfil_uso}` : '';
+    const loc = [m.municipio, m.uf].filter(Boolean).join('/') || 'localização não informada';
+    return `- ${m.nome} (${loc}) → módulos: ${modulos}${saude}`;
+  };
+
+  const blocoExatos = exatos.length
+    ? `### Clientes com CNAE idêntico (${exatos.length})\n${exatos.map(formatarMatch).join('\n')}`
+    : '';
+  const blocoDivisao = divisao.length
+    ? `### Clientes do mesmo setor (${divisao.length})\n${divisao.map(formatarMatch).join('\n')}`
+    : '';
+
+  const blocoModulos = stats.modulos_mais_usados.length
+    ? stats.modulos_mais_usados.slice(0, 6).map(m => `${m.modulo} (${m.percentual}%)`).join(', ')
+    : 'dados insuficientes';
+
+  const blocoUfs = stats.uf_com_mais_clientes.length
+    ? stats.uf_com_mais_clientes.map(u => `${u.uf}: ${u.count}`).join(', ')
+    : 'dados insuficientes';
+
+  const semDados = matches.length === 0;
+
+  return `Você é um consultor especializado em vendas B2B de software TMS/YMS para empresas de logística e transporte no Brasil.
+
+## Plataforma: Fretefy
+- TMS/YMS SaaS B2B focado em transportadoras e embarcadoras
+- Core do produto: gestão de Cargas e Reservas de doca
+- Módulos complementares: TabelaFrete, Acordo Comercial, BloqueioDoca, Automação, API de integração
+- Diferenciais: automação de processos, integração técnica via API, visibilidade de operações em tempo real
+
+## Prospect em análise
+- CNAE Principal: ${input.cnae_fiscal} — ${segmento}
+${cnaesSec ? `- CNAEs Secundários: ${cnaesSec}` : ''}
+
+## Base de clientes similares na Fretefy (${matches.length} encontrado${matches.length !== 1 ? 's' : ''})
+${semDados
+  ? 'Nenhum cliente com CNAE similar encontrado na base. Analise o segmento com base no CNAE informado.'
+  : [blocoExatos, blocoDivisao].filter(Boolean).join('\n\n')}
+
+## Estatísticas do segmento (clientes similares)
+- Módulos mais adotados: ${blocoModulos}
+- Presença por estado: ${blocoUfs}
+
+## Tarefa
+Com base no perfil do prospect (CNAE, setor de atuação) e na experiência da Fretefy com clientes similares, gere insights práticos de venda.
+
+${semDados
+  ? 'Foco no segmento e nas dores típicas do setor, sem referência a clientes específicos.'
+  : 'Use os padrões de adoção dos clientes similares para embasar o argumento. Mencione explicitamente que já temos experiência no setor quando relevante.'}
+
+Retorne APENAS JSON válido, sem markdown:
+{
+  "argumento_venda": "<2-3 frases de abertura convincentes para o primeiro contato>",
+  "diferenciais": ["<diferencial 1 relevante para esse setor>", "<diferencial 2>", "<diferencial 3>"],
+  "modulos_recomendados": ["<módulo mais crítico para esse perfil>", "<módulo 2>"],
+  "abordagem_sugerida": "<como iniciar a conversa e conduzir a descoberta com esse tipo de empresa>",
+  "oportunidades": ["<oportunidade específica identificada para esse CNAE/setor>", "<oportunidade 2>"],
+  "riscos_conhecidos": ["<objeção ou risco comum para esse perfil de cliente>", "<risco 2>"]
+}`;
+}
+
 function contextoCalendario(): string {
   const hoje = new Date();
   const diaDoMes = hoje.getDate();

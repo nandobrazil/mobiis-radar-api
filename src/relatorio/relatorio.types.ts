@@ -101,6 +101,11 @@ export interface InsightsCnae {
   modulos_mais_usados: { modulo: string; count: number; percentual: number }[];
   uf_com_mais_clientes: { uf: string; count: number }[];
   argumento_venda: string;
+  diferenciais: string[];
+  modulos_recomendados: string[];
+  abordagem_sugerida: string;
+  oportunidades: string[];
+  riscos_conhecidos: string[];
 }
 
 export interface MatchCnaeResult {

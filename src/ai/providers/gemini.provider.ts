@@ -15,6 +15,21 @@ export class GeminiProvider implements IAiProvider {
     this.modelo = modelo;
   }
 
+  async completar(prompt: string): Promise<string> {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.modelo}:generateContent?key=${this.token}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0 },
+      }),
+    });
+    if (!res.ok) throw new Error(`Gemini ${res.status}: ${await res.text()}`);
+    const data: any = await res.json();
+    return data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  }
+
   async analisarLote(clientes: ClienteRisco[], contextos?: Map<string, string>): Promise<Map<string, AnaliseCliente>> {
     this.logger.log(`Lote de ${clientes.length} clientes → ${this.modelo}`);
 

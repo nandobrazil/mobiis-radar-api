@@ -25,6 +25,10 @@ export class AnthropicProvider implements IAiProvider {
     return parseRespostaLote(raw, this.nome);
   }
 
+  async completar(prompt: string): Promise<string> {
+    return this.chamarComRetry(prompt);
+  }
+
   private async chamarComRetry(prompt: string, tentativa = 1): Promise<string> {
     try {
       const response = await this.client.messages.create({

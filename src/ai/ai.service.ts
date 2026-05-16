@@ -51,6 +51,15 @@ export class AiService implements OnModuleInit {
     }
   }
 
+  async completar(prompt: string): Promise<string> {
+    try {
+      return await this.provider.completar(prompt);
+    } catch (e) {
+      this.logger.error(`Falha em completar() no provider ${this.provider.nome}: ${(e as Error).message}`);
+      return '';
+    }
+  }
+
   private createProvider(): IAiProvider {
     const nome = (this.config.getOrThrow<string>('AI_PROVIDER')).toUpperCase();
 

@@ -15,6 +15,22 @@ export class GptProvider implements IAiProvider {
     this.modelo = modelo;
   }
 
+  async completar(prompt: string): Promise<string> {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.token}` },
+      body: JSON.stringify({
+        model: this.modelo,
+        max_tokens: 2000,
+        temperature: 0,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+    if (!res.ok) throw new Error(`GPT ${res.status}: ${await res.text()}`);
+    const data: any = await res.json();
+    return data.choices?.[0]?.message?.content ?? '';
+  }
+
   async analisarLote(clientes: ClienteRisco[], contextos?: Map<string, string>): Promise<Map<string, AnaliseCliente>> {
     this.logger.log(`Lote de ${clientes.length} clientes → ${this.modelo}`);
 

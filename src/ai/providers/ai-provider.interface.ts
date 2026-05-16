@@ -5,6 +5,7 @@ export interface IAiProvider {
   readonly nome: string;
   readonly modelo: string;
   analisarLote(clientes: ClienteRisco[], contextos?: Map<string, string>): Promise<Map<string, AnaliseCliente>>;
+  completar(prompt: string): Promise<string>;
 }
 
 export function parseRespostaLote(raw: string, providerNome = 'AI'): Map<string, AnaliseCliente> {
