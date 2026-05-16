@@ -10,11 +10,28 @@ import { calcularParametrosRaw, gerarAlertas } from '../ai/prompts';
 import { OwnerLocalizacao } from '../mapa/mapa.types';
 import { ClienteComAnalise, DetalheCliente, EntidadeDetalhe, OrigemDetalhe, ParametrosAnalise, TendenciaSemanal } from './relatorio.types';
 
+export interface StatusAnalise {
+  processando: boolean;
+  iniciado_em: string | null;
+  chunks_total: number | null;
+  chunks_concluidos: number | null;
+  clientes_total: number | null;
+  clientes_analisados: number | null;
+}
+
 @Injectable()
 export class RelatorioService {
   private readonly logger = new Logger(RelatorioService.name);
   private readonly allowNoCache: boolean;
   private analiseEmAndamento: Promise<ClienteComAnalise[]> | null = null;
+  private statusAnalise: StatusAnalise = {
+    processando: false,
+    iniciado_em: null,
+    chunks_total: null,
+    chunks_concluidos: null,
+    clientes_total: null,
+    clientes_analisados: null,
+  };
 
   constructor(
     private clientesService: ClientesService,
@@ -26,14 +43,16 @@ export class RelatorioService {
     this.allowNoCache = this.config.get('ALLOW_NO_CACHE') === 'true';
   }
 
+  getStatus(): StatusAnalise {
+    return { ...this.statusAnalise };
+  }
+
   async getTodos(nocache = false): Promise<ClienteComAnalise[]> {
     if (!nocache && this.analiseEmAndamento) {
       this.logger.log('Análise já em andamento — aguardando resultado existente');
       return this.analiseEmAndamento;
     }
 
-    // nocache=true assume o slot — substitui análise antiga em background
-    // evitando que ela sobrescreva o cache com dados desatualizados
     const promise = this.executarAnalise(nocache);
     this.analiseEmAndamento = promise;
     try {
@@ -71,37 +90,55 @@ export class RelatorioService {
     const CHUNK = 3;
     const DELAY_MS = 2000;
 
-    // Ordenar pelo score determinístico (pior → melhor) antes de distribuir
     const semCacheOrdenado = [...semCache].sort((a, b) =>
       calcularParametrosRaw(a).metricas_derivadas.score_saude_base -
       calcularParametrosRaw(b).metricas_derivadas.score_saude_base
     );
 
-    // Distribuição em stripe: item i → chunk (i % totalChunks)
-    // Garante que cada chunk tenha clientes do espectro inteiro (1 ruim, 1 médio, 1 bom)
-    // em vez de todos ruins no primeiro chunk e todos bons no último
     const totalChunks = Math.ceil(semCacheOrdenado.length / CHUNK);
     const chunks: ClienteRisco[][] = Array.from({ length: totalChunks }, () => []);
     semCacheOrdenado.forEach((c, i) => chunks[i % totalChunks].push(c));
 
-    for (let ci = 0; ci < chunks.length; ci++) {
-      if (ci > 0) await sleep(DELAY_MS);
-      const chunk = chunks[ci];
-      this.logger.log(`Analisando chunk ${ci + 1}/${chunks.length} (${chunk.length} clientes)`);
-      const chunkContextos = new Map(
-        chunk.flatMap(c => {
+    this.statusAnalise = {
+      processando: true,
+      iniciado_em: new Date().toISOString(),
+      chunks_total: totalChunks,
+      chunks_concluidos: 0,
+      clientes_total: semCache.length,
+      clientes_analisados: 0,
+    };
+
+    try {
+      for (let ci = 0; ci < chunks.length; ci++) {
+        if (ci > 0) await sleep(DELAY_MS);
+        const chunk = chunks[ci];
+        this.logger.log(`Analisando chunk ${ci + 1}/${chunks.length} (${chunk.length} clientes)`);
+        const chunkContextos = new Map(
+          chunk.flatMap(c => {
+            const ctx = contextos.get(c.owner_id);
+            return ctx ? [[c.owner_id, ctx.contexto]] : [];
+          })
+        );
+        const analises = await this.aiService.analisarLote(chunk, chunkContextos);
+        for (const c of chunk) {
           const ctx = contextos.get(c.owner_id);
-          return ctx ? [[c.owner_id, ctx.contexto]] : [];
-        })
-      );
-      const analises = await this.aiService.analisarLote(chunk, chunkContextos);
-      for (const c of chunk) {
-        const ctx = contextos.get(c.owner_id);
-        const hash = this.cache.hashCliente(c, ctx?.contexto);
-        const analise = analises.get(c.owner_id) ?? null;
-        if (analise) this.cache.saveAnalise(c.owner_id, hash, analise);
-        novos.push({ cliente: c, analise, contexto: ctx ?? null, owner: buildOwnerLocalizacao(ownerMap.get(c.owner_id)), erro: analise ? undefined : true });
+          const hash = this.cache.hashCliente(c, ctx?.contexto);
+          const analise = analises.get(c.owner_id) ?? null;
+          if (analise) this.cache.saveAnalise(c.owner_id, hash, analise);
+          novos.push({ cliente: c, analise, contexto: ctx ?? null, owner: buildOwnerLocalizacao(ownerMap.get(c.owner_id)), erro: analise ? undefined : true });
+        }
+        this.statusAnalise.chunks_concluidos = ci + 1;
+        this.statusAnalise.clientes_analisados = novos.length;
       }
+    } finally {
+      this.statusAnalise = {
+        processando: false,
+        iniciado_em: null,
+        chunks_total: null,
+        chunks_concluidos: null,
+        clientes_total: null,
+        clientes_analisados: null,
+      };
     }
 
     const NIVEL_ORDEM: Record<string, number> = { ALTO: 0, MEDIO: 1, BAIXO: 2, INDEFINIDO: 3 };

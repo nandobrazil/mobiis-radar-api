@@ -1,6 +1,6 @@
-import { Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpException, NotFoundException, Param, Post, Query } from '@nestjs/common';
 import { ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RelatorioService } from './relatorio.service';
+import { RelatorioService, StatusAnalise } from './relatorio.service';
 import { ClienteComAnalise, DetalheCliente, ParametrosAnalise } from './relatorio.types';
 
 @ApiTags('Relatorio')
@@ -8,14 +8,29 @@ import { ClienteComAnalise, DetalheCliente, ParametrosAnalise } from './relatori
 export class RelatorioController {
   constructor(private relatorioService: RelatorioService) {}
 
+  @Get('status')
+  @ApiOperation({
+    summary: 'Status do processamento em andamento',
+    description: 'Retorna o progresso da análise em lote (chunks concluídos, clientes analisados). Use para polling no frontend enquanto processando=true.',
+  })
+  @ApiResponse({ status: 200, description: 'Status atual.' })
+  getStatus(): StatusAnalise {
+    return this.relatorioService.getStatus();
+  }
+
   @Get('clientes')
   @ApiOperation({
     summary: 'Todos os clientes com análise de churn',
-    description: 'Retorna todos os clientes com análise de risco em lote. Cache por hash de métricas — IA chamada apenas para quem mudou. Use ?nocache=true para forçar reprocessamento (requer ALLOW_NO_CACHE=true no servidor).',
+    description: 'Retorna todos os clientes com análise de risco. Retorna 202 se a análise ainda está em andamento — faça polling em GET /relatorio/status e tente novamente quando processando=false.',
   })
   @ApiQuery({ name: 'nocache', required: false, description: 'true = ignora cache e reprocessa via IA (só funciona se ALLOW_NO_CACHE=true no servidor)' })
-  @ApiResponse({ status: 200, description: 'Lista completa de clientes ordenada por score_ia decrescente.' })
-  getTodos(@Query('nocache') nocache?: string): Promise<ClienteComAnalise[]> {
+  @ApiResponse({ status: 200, description: 'Lista completa de clientes ordenada por risco/score.' })
+  @ApiResponse({ status: 202, description: 'Análise em andamento — tente novamente em breve.' })
+  async getTodos(@Query('nocache') nocache?: string): Promise<ClienteComAnalise[]> {
+    const status = this.relatorioService.getStatus();
+    if (status.processando && nocache !== 'true') {
+      throw new HttpException(status, 202);
+    }
     return this.relatorioService.getTodos(nocache === 'true');
   }
 
