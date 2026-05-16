@@ -54,6 +54,18 @@ export class MapaService {
         uf: geo?.uf ?? null,
         lat: geo?.lat ?? null,
         lng: geo?.lng ?? null,
+        razao_social: geo?.razao_social ?? null,
+        nome_fantasia: geo?.nome_fantasia ?? null,
+        cnae_fiscal: geo?.cnae_fiscal ?? null,
+        cnae_fiscal_descricao: geo?.cnae_fiscal_descricao ?? null,
+        cnaes_secundarios: geo?.cnaes_secundarios
+          ? JSON.parse(geo.cnaes_secundarios)
+          : null,
+        porte: geo?.porte ?? null,
+        natureza_juridica: geo?.natureza_juridica ?? null,
+        capital_social: geo?.capital_social ?? null,
+        data_inicio_atividade: geo?.data_inicio_atividade ?? null,
+        opcao_pelo_simples: geo?.opcao_pelo_simples ?? null,
       };
     });
   }
@@ -157,7 +169,7 @@ export class MapaService {
         return vazio;
       }
 
-      const d = await res.json() as Record<string, string>;
+      const d = await res.json() as Record<string, any>;
       return {
         documento: cnpj,
         cep: d.cep ?? null,
@@ -167,6 +179,18 @@ export class MapaService {
         bairro: d.bairro ?? null,
         municipio: d.municipio ?? null,
         uf: d.uf ?? null,
+        razao_social: d.razao_social ?? null,
+        nome_fantasia: d.nome_fantasia || null,
+        cnae_fiscal: d.cnae_fiscal ?? null,
+        cnae_fiscal_descricao: d.cnae_fiscal_descricao ?? null,
+        cnaes_secundarios: d.cnaes_secundarios?.length
+          ? JSON.stringify(d.cnaes_secundarios.map((c: any) => ({ codigo: c.codigo, descricao: c.descricao })))
+          : null,
+        porte: d.porte ?? null,
+        natureza_juridica: d.natureza_juridica ?? null,
+        capital_social: d.capital_social ?? null,
+        data_inicio_atividade: d.data_inicio_atividade ?? null,
+        opcao_pelo_simples: d.opcao_pelo_simples ?? null,
         fonte: 'brasilapi',
       };
     } catch (e) {

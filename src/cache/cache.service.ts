@@ -101,16 +101,26 @@ export class CacheService implements OnModuleInit {
 
       -- Endereço enriquecido por CNPJ via BrasilAPI (permanente — nunca re-busca)
       CREATE TABLE IF NOT EXISTS owners_geo (
-        documento   TEXT PRIMARY KEY,
-        cep         TEXT,
-        logradouro  TEXT,
-        numero      TEXT,
-        complemento TEXT,
-        bairro      TEXT,
-        municipio   TEXT,
-        uf          TEXT,
-        fonte       TEXT NOT NULL DEFAULT 'brasilapi',
-        buscado_em  TEXT NOT NULL
+        documento              TEXT PRIMARY KEY,
+        cep                    TEXT,
+        logradouro             TEXT,
+        numero                 TEXT,
+        complemento            TEXT,
+        bairro                 TEXT,
+        municipio              TEXT,
+        uf                     TEXT,
+        razao_social           TEXT,
+        nome_fantasia          TEXT,
+        cnae_fiscal            INTEGER,
+        cnae_fiscal_descricao  TEXT,
+        cnaes_secundarios      TEXT,
+        porte                  TEXT,
+        natureza_juridica      TEXT,
+        capital_social         REAL,
+        data_inicio_atividade  TEXT,
+        opcao_pelo_simples     INTEGER,
+        fonte                  TEXT NOT NULL DEFAULT 'brasilapi',
+        buscado_em             TEXT NOT NULL
       );
 
       -- Lat/lng por cidade+uf via Nominatim (permanente — nunca re-busca)
@@ -127,6 +137,16 @@ export class CacheService implements OnModuleInit {
     for (const migration of [
       "ALTER TABLE analises_cache ADD COLUMN perfil_uso TEXT NOT NULL DEFAULT 'MODERADO'",
       "ALTER TABLE analises_cache ADD COLUMN padrao_historico TEXT NOT NULL DEFAULT ''",
+      'ALTER TABLE owners_geo ADD COLUMN razao_social TEXT',
+      'ALTER TABLE owners_geo ADD COLUMN nome_fantasia TEXT',
+      'ALTER TABLE owners_geo ADD COLUMN cnae_fiscal INTEGER',
+      'ALTER TABLE owners_geo ADD COLUMN cnae_fiscal_descricao TEXT',
+      'ALTER TABLE owners_geo ADD COLUMN cnaes_secundarios TEXT',
+      'ALTER TABLE owners_geo ADD COLUMN porte TEXT',
+      'ALTER TABLE owners_geo ADD COLUMN natureza_juridica TEXT',
+      'ALTER TABLE owners_geo ADD COLUMN capital_social REAL',
+      'ALTER TABLE owners_geo ADD COLUMN data_inicio_atividade TEXT',
+      'ALTER TABLE owners_geo ADD COLUMN opcao_pelo_simples INTEGER',
     ]) {
       try { this.db.prepare(migration).run(); } catch { /* coluna já existe */ }
     }
@@ -414,11 +434,24 @@ export class CacheService implements OnModuleInit {
   saveOwnerGeo(geo: OwnerGeoRow): void {
     this.db.prepare(`
       INSERT OR REPLACE INTO owners_geo
-        (documento, cep, logradouro, numero, complemento, bairro, municipio, uf, fonte, buscado_em)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (documento, cep, logradouro, numero, complemento, bairro, municipio, uf,
+         razao_social, nome_fantasia, cnae_fiscal, cnae_fiscal_descricao, cnaes_secundarios,
+         porte, natureza_juridica, capital_social, data_inicio_atividade, opcao_pelo_simples,
+         fonte, buscado_em)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       geo.documento, geo.cep, geo.logradouro, geo.numero,
       geo.complemento, geo.bairro, geo.municipio, geo.uf,
+      geo.razao_social ?? null,
+      geo.nome_fantasia ?? null,
+      geo.cnae_fiscal ?? null,
+      geo.cnae_fiscal_descricao ?? null,
+      geo.cnaes_secundarios ?? null,
+      geo.porte ?? null,
+      geo.natureza_juridica ?? null,
+      geo.capital_social ?? null,
+      geo.data_inicio_atividade ?? null,
+      geo.opcao_pelo_simples != null ? (geo.opcao_pelo_simples ? 1 : 0) : null,
       geo.fonte, new Date().toISOString(),
     );
   }
@@ -471,6 +504,16 @@ export interface OwnerGeoRow {
   bairro: string | null;
   municipio: string | null;
   uf: string | null;
+  razao_social?: string | null;
+  nome_fantasia?: string | null;
+  cnae_fiscal?: number | null;
+  cnae_fiscal_descricao?: string | null;
+  cnaes_secundarios?: string | null;
+  porte?: string | null;
+  natureza_juridica?: string | null;
+  capital_social?: number | null;
+  data_inicio_atividade?: string | null;
+  opcao_pelo_simples?: boolean | null;
   fonte: string;
   buscado_em?: string;
 }
