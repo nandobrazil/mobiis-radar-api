@@ -142,7 +142,13 @@ export class MapaService {
       });
 
       if (!res.ok) {
-        this.logger.warn(`BrasilAPI ${cnpj}: HTTP ${res.status}`);
+        // 403/404 = CNPJ sem dados públicos na Receita Federal (esperado, salvo como nao_encontrado)
+        // 5xx/outros = erro real da API
+        if (res.status === 403 || res.status === 404) {
+          this.logger.log(`BrasilAPI ${cnpj}: HTTP ${res.status} — CNPJ sem dados públicos, ignorando`);
+        } else {
+          this.logger.warn(`BrasilAPI ${cnpj}: HTTP ${res.status} inesperado`);
+        }
         return vazio;
       }
 
