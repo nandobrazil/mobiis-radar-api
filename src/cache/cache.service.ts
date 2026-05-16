@@ -132,6 +132,14 @@ export class CacheService implements OnModuleInit {
         lng        REAL,
         buscado_em TEXT NOT NULL
       );
+
+      -- Cache de match-cnae + insights IA, keyed pelos CNAEs do prospect
+      CREATE TABLE IF NOT EXISTS match_cnae_cache (
+        cache_key     TEXT PRIMARY KEY,
+        total_matches INTEGER NOT NULL,
+        result        TEXT NOT NULL,
+        cached_at     TEXT NOT NULL
+      );
     `);
     // Migrações para bancos existentes sem as colunas novas
     for (const migration of [
@@ -555,6 +563,27 @@ export class CacheService implements OnModuleInit {
     })();
 
     return { owners: data.owners_geo.length, cidades: data.cidades_geo.length };
+  }
+
+  // ─── Cache match-cnae (keyed pelos CNAEs do prospect) ────────────────────
+
+  getMatchCnaeCache(cacheKey: string): { total_matches: number; result: any } | null {
+    const row = this.db.prepare(
+      'SELECT total_matches, result FROM match_cnae_cache WHERE cache_key = ?'
+    ).get(cacheKey) as { total_matches: number; result: string } | undefined;
+    if (!row) return null;
+    return { total_matches: row.total_matches, result: JSON.parse(row.result) };
+  }
+
+  saveMatchCnaeCache(cacheKey: string, totalMatches: number, result: any): void {
+    this.db.prepare(`
+      INSERT OR REPLACE INTO match_cnae_cache (cache_key, total_matches, result, cached_at)
+      VALUES (?, ?, ?, ?)
+    `).run(cacheKey, totalMatches, JSON.stringify(result), new Date().toISOString());
+  }
+
+  deleteMatchCnaeCache(cacheKey: string): void {
+    this.db.prepare('DELETE FROM match_cnae_cache WHERE cache_key = ?').run(cacheKey);
   }
 
   // ─── Utilitários ──────────────────────────────────────────────────────────

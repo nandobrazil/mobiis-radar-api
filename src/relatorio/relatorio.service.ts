@@ -218,7 +218,9 @@ export class RelatorioService {
     };
   }
 
-  async matchCnae(input: MatchCnaeInput): Promise<MatchCnaeResult> {
+  async matchCnae(input: MatchCnaeInput, nocache = false): Promise<MatchCnaeResult> {
+    const cacheKey = [input.cnae_fiscal, ...(input.cnaes_secundarios ?? []).map(c => c.codigo).sort((a, b) => a - b)].join(',');
+
     const allInputCnaes = new Set<number>([input.cnae_fiscal]);
     const inputDivisoes = new Set<string>([String(input.cnae_fiscal).substring(0, 2)]);
 
@@ -277,9 +279,23 @@ export class RelatorioService {
     });
 
     const stats = calcularStatsCnae(matches);
-    const insights = await this.gerarInsightsCnaeIA(input, matches, stats);
 
-    return { matches, insights };
+    if (!nocache) {
+      const cached = this.cache.getMatchCnaeCache(cacheKey);
+      if (cached) {
+        if (matches.length <= cached.total_matches) {
+          this.logger.log(`match-cnae: cache hit (${cached.total_matches} matches cached, ${matches.length} atuais)`);
+          return cached.result;
+        }
+        this.logger.log(`match-cnae: cache invalidado — ${matches.length} matches > ${cached.total_matches} em cache`);
+        this.cache.deleteMatchCnaeCache(cacheKey);
+      }
+    }
+
+    const insights = await this.gerarInsightsCnaeIA(input, matches, stats);
+    const result: MatchCnaeResult = { matches, insights };
+    this.cache.saveMatchCnaeCache(cacheKey, matches.length, result);
+    return result;
   }
 
   private async gerarInsightsCnaeIA(

@@ -38,12 +38,13 @@ export class RelatorioController {
   @HttpCode(200)
   @ApiOperation({
     summary: 'Match de CNAE contra base de clientes para argumento de venda',
-    description: 'Recebe o payload completo da BrasilAPI (ou apenas cnae_fiscal + cnaes_secundarios) e retorna clientes na base com CNAEs idênticos (EXATO) ou do mesmo setor (DIVISAO), com os módulos que cada um usa e insights para argumentação de venda.',
+    description: 'Recebe o payload completo da BrasilAPI (ou apenas cnae_fiscal + cnaes_secundarios) e retorna clientes na base com CNAEs idênticos (EXATO) ou do mesmo setor (DIVISAO), com os módulos que cada um usa e insights gerados por IA para argumentação de venda. O resultado é cacheado por combinação de CNAEs e invalidado automaticamente se novos owners forem encontrados. Use ?nocache=true para forçar reprocessamento via IA.',
   })
+  @ApiQuery({ name: 'nocache', required: false, description: 'true = ignora cache e reprocessa insights via IA' })
   @ApiBody({ schema: { properties: { cnae_fiscal: { type: 'number' }, cnae_fiscal_descricao: { type: 'string' }, cnaes_secundarios: { type: 'array' } } } })
   @ApiResponse({ status: 200, description: 'Matches e insights.' })
-  matchCnae(@Body() body: MatchCnaeInput): Promise<MatchCnaeResult> {
-    return this.relatorioService.matchCnae(body);
+  matchCnae(@Body() body: MatchCnaeInput, @Query('nocache') nocache?: string): Promise<MatchCnaeResult> {
+    return this.relatorioService.matchCnae(body, nocache === 'true');
   }
 
   @Get('cliente/:ownerId')
