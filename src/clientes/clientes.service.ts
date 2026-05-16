@@ -26,19 +26,26 @@ const QUERY_HOJE = `
   GROUP BY e.OwnerId, o.Name
 `;
 
+const HOJE_TTL_MS = 10 * 60 * 1000; // 10 minutos
+
 @Injectable()
 export class ClientesService {
+  private hojeCache: { data: Map<string, any>; ts: number } | null = null;
+
   constructor(
     private db: DatabaseService,
     private cache: CacheService,
   ) {}
 
   async getTodos(nocache = false): Promise<ClienteRisco[]> {
-    if (nocache) await this.cache.forceSync();
+    if (nocache) {
+      await this.cache.forceSync();
+      this.hojeCache = null;
+    }
 
     const [historico, hoje] = await Promise.all([
       Promise.resolve(this.cache.getHistoricoTodos()),
-      this.queryHoje(),
+      this.queryHojeCached(),
     ]);
 
     const merged = this.merge(historico, hoje);
@@ -66,6 +73,16 @@ export class ClientesService {
   }
 
   // ─── Queries SQL Server (só hoje) ─────────────────────────────────────────
+
+  private async queryHojeCached(): Promise<Map<string, any>> {
+    const agora = Date.now();
+    if (this.hojeCache && agora - this.hojeCache.ts < HOJE_TTL_MS) {
+      return this.hojeCache.data;
+    }
+    const data = await this.queryHoje();
+    this.hojeCache = { data, ts: agora };
+    return data;
+  }
 
   private async queryHoje(): Promise<Map<string, any>> {
     const result = await this.db.connection.request().query(QUERY_HOJE);

@@ -278,7 +278,7 @@ export class CacheService implements OnModuleInit {
     contexto?: string,
   ): string {
     return [
-      c.dias_sem_atividade,
+      this.bucketDias(c.dias_sem_atividade),
       c.acoes_90d,
       c.acoes_30d,
       c.acoes_core_30d,
@@ -287,9 +287,19 @@ export class CacheService implements OnModuleInit {
       c.entidades_utilizadas,
       c.usuarios_ativos,
       c.acoes_automatizadas_30d,
-      // contexto só entra no hash quando existe — garante compatibilidade com cache anterior
       ...(contexto ? [contexto] : []),
     ].join('|');
+  }
+
+  // Agrupa dias_sem_atividade em faixas — evita invalidação diária por +1 dia
+  private bucketDias(dias: number): string {
+    if (dias === 0)   return '0';
+    if (dias <= 7)    return '1-7';
+    if (dias <= 15)   return '8-15';
+    if (dias <= 30)   return '16-30';
+    if (dias <= 60)   return '31-60';
+    if (dias <= 90)   return '61-90';
+    return '91+';
   }
 
   // ─── Contexto CS por cliente (permanente) ─────────────────────────────────
