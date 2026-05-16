@@ -27,14 +27,15 @@ export class RelatorioService {
   }
 
   async getTodos(nocache = false): Promise<ClienteComAnalise[]> {
-    // Requisições simultâneas compartilham o mesmo processo em andamento
     if (!nocache && this.analiseEmAndamento) {
       this.logger.log('Análise já em andamento — aguardando resultado existente');
       return this.analiseEmAndamento;
     }
 
+    // nocache=true assume o slot — substitui análise antiga em background
+    // evitando que ela sobrescreva o cache com dados desatualizados
     const promise = this.executarAnalise(nocache);
-    if (!nocache) this.analiseEmAndamento = promise;
+    this.analiseEmAndamento = promise;
     try {
       return await promise;
     } finally {
