@@ -234,11 +234,11 @@ export class CacheService implements OnModuleInit {
     `).run(
       ownerId,
       hash,
-      analise.nivel_risco,
-      analise.score_ia,
-      analise.resumo,
-      JSON.stringify(analise.motivos),
-      analise.acao_recomendada,
+      analise.nivel_risco   ?? 'BAIXO',
+      analise.score_ia      ?? 0,
+      analise.resumo        ?? '',
+      JSON.stringify(analise.motivos ?? []),
+      analise.acao_recomendada ?? '',
       new Date().toISOString(),
     );
   }
